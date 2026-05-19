@@ -804,14 +804,14 @@ a:hover { text-decoration: underline; }
 /* Lista de cartas dentro do deck: speaker colado em cada lado */
 .card-row {
   display: grid;
-  grid-template-columns: 32px 1fr auto 24px 1fr auto auto;
-  gap: 10px;
+  grid-template-columns: 32px 1fr auto 1fr auto auto;
+  column-gap: 10px;
   align-items: center;
 }
 .card-row-front-audio,
 .card-row-back-audio { display: inline-flex; }
+.card-row-back { padding-left: 16px; }
 .card-row-stats { padding-left: 12px; }
-.card-row > .card-row-front-audio + .muted { margin-left: 12px; }
 
 @media (max-width: 600px) {
   .card-row {
