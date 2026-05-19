@@ -11,6 +11,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY server.js ./
+COPY server ./server
 COPY --from=build /app/dist ./public
 EXPOSE 5034
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=10s \

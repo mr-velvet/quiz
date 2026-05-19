@@ -2,5 +2,8 @@
   "name": "quiz",
   "port": 5034,
   "database": false,
-  "logto": false
+  "logto": false,
+  "env": {
+    "OPENAI_API_KEY": { "source": "platform", "required": true }
+  }
 }

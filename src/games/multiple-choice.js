@@ -2,6 +2,7 @@ import { el, shuffle, pickRandom } from '../core/util.js';
 import { getDeck, recordCardResult } from '../core/store.js';
 import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
+import { playCardAudio, speakerButton, detectDeckLang, stopAudio } from '../core/audio.js';
 
 export function renderMultipleChoice(root, deckId) {
   const deck = getDeck(deckId);
@@ -15,9 +16,15 @@ export function renderMultipleChoice(root, deckId) {
   }
 
   const cards = shuffle(deck.cards);
+  const deckLang = detectDeckLang(deck);
   let i = 0, correct = 0, wrong = 0, locked = false;
   let currentOptions = [];
   let currentCorrectIdx = -1;
+
+  async function playPrompt() {
+    if (i >= cards.length) return;
+    await playCardAudio(deckId, cards[i].id, 'front', deckLang?.front);
+  }
 
   root.appendChild(topbar({ showBack: true, title: `${deck.name} · Múltipla escolha` }));
   const stage = el('div', { class: 'stack stack-4' });
@@ -64,7 +71,11 @@ export function renderMultipleChoice(root, deckId) {
         el('span', { class: 'pill pill-bad' }, [`✕ ${wrong}`])
       ])
     ]));
-    stage.appendChild(el('div', { class: 'mc-prompt' }, [card.front]));
+    const promptRow = el('div', { class: 'mc-prompt-row' }, [
+      el('div', { class: 'mc-prompt' }, [card.front])
+    ]);
+    promptRow.appendChild(speakerButton(playPrompt));
+    stage.appendChild(promptRow);
     stage.appendChild(el('div', { class: 'mc-options' },
       currentOptions.map((opt, idx) => {
         const cls = ['mc-option'];
@@ -83,16 +94,17 @@ export function renderMultipleChoice(root, deckId) {
         ]);
       })
     ));
-    stage.appendChild(el('div', { class: 'fc-hint center' }, ['Atalhos: ', el('span', { class: 'kbd' }, ['1']), ' ', el('span', { class: 'kbd' }, ['2']), ' ', el('span', { class: 'kbd' }, ['3']), ' ', el('span', { class: 'kbd' }, ['4'])]));
+    stage.appendChild(el('div', { class: 'fc-hint center' }, ['Atalhos: ', el('span', { class: 'kbd' }, ['1']), ' ', el('span', { class: 'kbd' }, ['2']), ' ', el('span', { class: 'kbd' }, ['3']), ' ', el('span', { class: 'kbd' }, ['4']), ' · ', el('span', { class: 'kbd' }, ['S']), ' ouvir']));
   }
 
   function onKey(e) {
     if (i >= cards.length || locked) return;
+    if (e.key === 's' || e.key === 'S') { e.preventDefault(); playPrompt().catch(() => {}); return; }
     const n = parseInt(e.key, 10);
     if (n >= 1 && n <= 4) choose(n - 1);
   }
   window.addEventListener('keydown', onKey);
-  registerCleanup(() => window.removeEventListener('keydown', onKey));
+  registerCleanup(() => { window.removeEventListener('keydown', onKey); stopAudio(); });
 
   buildRound();
   rerender();

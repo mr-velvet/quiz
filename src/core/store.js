@@ -94,6 +94,24 @@ export function addCards(deckId, cards) {
   write(s);
 }
 
+// Persiste mutação direta no deck (ex.: card.audio gerado pelo TTS).
+// Usa read-modify-write: copia card.audio do deck passado pra versão fresca,
+// evitando que mutações concorrentes em outras tabs sejam sobrescritas.
+export function saveDeck(deck) {
+  if (!deck || !deck.id) return;
+  const s = read();
+  const remote = s.decks[deck.id];
+  if (!remote) return;
+  // Merge: pra cada card no deck passado, copia o audio se mudou.
+  for (const card of deck.cards) {
+    const remoteCard = remote.cards.find(c => c.id === card.id);
+    if (remoteCard && card.audio) {
+      remoteCard.audio = { ...(remoteCard.audio || {}), ...card.audio };
+    }
+  }
+  write(s);
+}
+
 export function recordCardResult(deckId, cardId, correct) {
   const s = read();
   const deck = s.decks[deckId];

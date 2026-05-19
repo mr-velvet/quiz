@@ -3,6 +3,7 @@ import { getDeck, deleteDeck, renameDeck, addCards, parseImport } from '../core/
 import { topbar } from './topbar.js';
 import { openModal, confirmModal } from './modal.js';
 import { go } from './router.js';
+import { playCardAudio, speakerButton, detectDeckLang } from '../core/audio.js';
 
 const MODES = [
   { key: 'flashcards', icon: '🃏', title: 'Flashcards', desc: 'Vire as cartas, marque o que sabe.' },
@@ -67,15 +68,20 @@ export function renderDeck(root, deckId) {
             el('p', {}, ['Adicione cartas pra começar.'])
           ])
         : el('div', { class: 'stack stack-2' },
-            deck.cards.map((c, i) => el('div', {
-              class: 'panel',
-              style: { padding: '12px 16px', display: 'grid', gridTemplateColumns: '32px 1fr 1fr auto', gap: '16px', alignItems: 'center' }
-            }, [
-              el('div', { class: 'tiny muted' }, [String(i + 1).padStart(2, '0')]),
-              el('div', {}, [c.front]),
-              el('div', { class: 'muted' }, [c.back]),
-              el('div', { class: 'tiny muted' }, [`${c.stats.correct}/${c.stats.correct + c.stats.wrong}`])
-            ]))
+            (() => {
+              const lang = detectDeckLang(deck);
+              return deck.cards.map((c, i) => el('div', {
+                class: 'panel card-row',
+                style: { padding: '12px 16px' }
+              }, [
+                el('div', { class: 'tiny muted card-row-idx' }, [String(i + 1).padStart(2, '0')]),
+                el('div', { class: 'card-row-front' }, [c.front]),
+                el('div', { class: 'card-row-front-audio' }, [speakerButton(() => playCardAudio(deck.id, c.id, 'front', lang?.front))]),
+                el('div', { class: 'muted card-row-back' }, [c.back]),
+                el('div', { class: 'card-row-back-audio' }, [speakerButton(() => playCardAudio(deck.id, c.id, 'back', lang?.back))]),
+                el('div', { class: 'tiny muted card-row-stats' }, [`${c.stats.correct}/${c.stats.correct + c.stats.wrong}`])
+              ]));
+            })()
           )
     ])
   ]));

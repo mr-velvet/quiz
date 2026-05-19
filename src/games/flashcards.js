@@ -3,15 +3,24 @@ import { getDeck, recordCardResult } from '../core/store.js';
 import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
 import { shuffle } from '../core/util.js';
+import { playCardAudio, speakerButton, detectDeckLang, stopAudio } from '../core/audio.js';
 
 export function renderFlashcards(root, deckId) {
   const deck = getDeck(deckId);
   if (!deck || deck.cards.length === 0) { go(`/deck/${deckId}`); return; }
 
   const cards = shuffle(deck.cards);
+  const deckLang = detectDeckLang(deck);
   let i = 0;
   let flipped = false;
   let known = 0, unknown = 0;
+
+  async function playCurrent() {
+    if (i >= cards.length) return;
+    const side = flipped ? 'back' : 'front';
+    const lang = flipped ? deckLang?.back : deckLang?.front;
+    await playCardAudio(deckId, cards[i].id, side, lang);
+  }
 
   root.appendChild(topbar({ showBack: true, title: `${deck.name} · Flashcards` }));
 
@@ -49,7 +58,7 @@ export function renderFlashcards(root, deckId) {
     }
     const card = cards[i];
     stage.appendChild(el('div', { class: 'fc-counter' }, [`Carta ${i + 1} de ${cards.length} · ${known} sabidas · ${unknown} a revisar`]));
-    stage.appendChild(el('div', { class: 'fc-card' + (flipped ? ' flipped' : ''), onClick: flip, attrs: { 'data-testid': 'fc-card' } }, [
+    const cardEl = el('div', { class: 'fc-card' + (flipped ? ' flipped' : ''), onClick: flip, attrs: { 'data-testid': 'fc-card' } }, [
       el('div', { class: 'fc-card-inner' }, [
         el('div', { class: 'fc-face' }, [
           el('div', { class: 'fc-face-label' }, ['Frente']),
@@ -60,13 +69,15 @@ export function renderFlashcards(root, deckId) {
           el('div', {}, [card.back])
         ])
       ])
-    ]));
+    ]);
+    cardEl.appendChild(speakerButton(playCurrent));
+    stage.appendChild(cardEl);
     stage.appendChild(el('div', { class: 'fc-controls' }, [
       el('button', { class: 'btn btn-danger btn-lg', onClick: () => answer(false), attrs: { 'data-testid': 'fc-unknown' } }, ['Não sei', el('span', { class: 'kbd' }, ['1'])]),
       el('button', { class: 'btn btn-lg', onClick: flip }, ['Virar', el('span', { class: 'kbd' }, ['Espaço'])]),
       el('button', { class: 'btn btn-primary btn-lg', onClick: () => answer(true), attrs: { 'data-testid': 'fc-known' } }, ['Sei', el('span', { class: 'kbd' }, ['2'])])
     ]));
-    stage.appendChild(el('div', { class: 'fc-hint' }, ['Atalho: ', el('span', { class: 'kbd' }, ['espaço']), ' vira · ', el('span', { class: 'kbd' }, ['1']), ' não sei · ', el('span', { class: 'kbd' }, ['2']), ' sei · ', el('span', { class: 'kbd' }, ['←/→']), ' navegar']));
+    stage.appendChild(el('div', { class: 'fc-hint' }, ['Atalho: ', el('span', { class: 'kbd' }, ['espaço']), ' vira · ', el('span', { class: 'kbd' }, ['1']), ' não sei · ', el('span', { class: 'kbd' }, ['2']), ' sei · ', el('span', { class: 'kbd' }, ['S']), ' ouvir · ', el('span', { class: 'kbd' }, ['←/→']), ' navegar']));
   }
 
   function onKey(e) {
@@ -75,11 +86,12 @@ export function renderFlashcards(root, deckId) {
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); }
     else if (e.key === '1') answer(false);
     else if (e.key === '2') answer(true);
+    else if (e.key === 's' || e.key === 'S') { e.preventDefault(); playCurrent().catch(() => {}); }
     else if (e.key === 'ArrowRight' && i < cards.length - 1) { i++; flipped = false; rerender(); }
     else if (e.key === 'ArrowLeft' && i > 0) { i--; flipped = false; rerender(); }
   }
   window.addEventListener('keydown', onKey);
-  registerCleanup(() => window.removeEventListener('keydown', onKey));
+  registerCleanup(() => { window.removeEventListener('keydown', onKey); stopAudio(); });
 
   rerender();
 }
