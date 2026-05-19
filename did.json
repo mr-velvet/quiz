@@ -1,0 +1,6 @@
+{
+  "name": "quiz",
+  "port": 5034,
+  "database": false,
+  "logto": false
+}
