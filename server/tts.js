@@ -12,6 +12,7 @@
 
 const crypto = require('crypto');
 const https = require('https');
+const http = require('http');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const GCS_BUCKET = process.env.GCS_BUCKET || 'didlu-imagestore';
@@ -111,8 +112,8 @@ function getAccessToken() {
       return resolve(cachedToken);
     }
 
-    // Metadata server (funciona em VM GCP).
-    const req = https.request({
+    // Metadata server (funciona em VM GCP). É HTTP, não HTTPS.
+    const req = http.request({
       hostname: 'metadata.google.internal',
       path: '/computeMetadata/v1/instance/service-accounts/default/token',
       headers: { 'Metadata-Flavor': 'Google' },
