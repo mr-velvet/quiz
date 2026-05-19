@@ -8,6 +8,7 @@ RUN npx vite build
 
 FROM node:20-alpine
 WORKDIR /app
+RUN apk add --no-cache ca-certificates && update-ca-certificates
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY server.js ./
