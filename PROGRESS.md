@@ -1,6 +1,23 @@
-# simple-flash-cards — Progresso
+# Flashy (quiz) — Progresso
 
 Última atualização: 2026-05-19
+
+## Produção
+
+- **URL:** https://quiz.did.lu
+- **Repo:** https://github.com/mr-velvet/quiz (branch `master`)
+- **Porta interna:** 5034
+- **Container:** Node 20 + Express servindo build do Vite em `public/`
+- **Health:** `GET /api/health` → `{"status":"ok","service":"quiz"}`
+- **Deploy:** `cd ~/ved/devops-workflow-2026 && .\scripts\did.ps1 deploy quiz`
+- **Pasta local:** `~/ved/quiz/` (renomeada de `~/ved/simple-flash-cards/`)
+
+> Observação técnica do deploy inicial: o `new-app.sh` da plataforma teve
+> sucesso, mas o `add-env-vars.sh` (passo 2/5 do `deploy.sh`) duplicou a chave
+> `PORT` no `docker-compose.yml`, quebrando o passo seguinte. App ficou rodando
+> normalmente; YAML foi corrigido manualmente removendo a linha duplicada.
+> Próximo deploy: verificar se o bug se repete e reportar pro mantenedor da
+> plataforma se sim.
 
 ## Visão de produto
 
