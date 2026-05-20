@@ -204,14 +204,20 @@ export function getDeck(id) {
 
 // Versão assíncrona — busca do backend, atualiza cache. Útil pra detalhe do deck
 // quando vem de Explorar (não estava no cache de "meus").
+// NÃO emite por padrão: chamado a cada render do detalhe, emitir causa loop
+// (onChange → render → fetchDeck → emit → onChange → ...).
+// Mutations explícitas (create/delete/etc) emitem por conta própria.
 export async function fetchDeck(id) {
   const remote = await api.getDeck(id);
   const existing = deckCache.get(id);
   const norm = normalizeDeck(remote, existing);
   deckCache.set(id, norm);
-  // Se passou a ser meu (clone, etc.) e ainda não está na order, prepend.
-  if (norm.isMine && !myDeckOrder.includes(id)) myDeckOrder = [id, ...myDeckOrder];
-  emit();
+  // Se passou a ser meu (clone, etc.) e ainda não está na order, registra
+  // — só emite se a order mudou de verdade (evita loop em detalhe).
+  if (norm.isMine && !myDeckOrder.includes(id)) {
+    myDeckOrder = [id, ...myDeckOrder];
+    emit();
+  }
   return norm;
 }
 
