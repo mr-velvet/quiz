@@ -1,14 +1,16 @@
 # Flashy (quiz) — Progresso
 
-Última atualização: 2026-05-20 (sprint ownership entregue)
+Última atualização: 2026-05-20 (sprint gamificação)
 
 > **Antes de qualquer trabalho neste repo, ler `CONCEPTS.md`** — visão de produto,
 > princípios e decisões estratégicas. Este arquivo aqui é o estado operacional.
 >
-> Specs detalhadas da sprint atual em `specs/`:
-> - `DECISIONS-sprint-ownership.md` — decisões batidas
-> - `PRODUCT-SPEC-ownership.md` — visão de produto
-> - `UX-SPEC-ownership.md` — desenho visual
+> Specs detalhadas em `specs/`. A última sprint (gamificação) está documentada em:
+> - `DECISIONS-sprint-gamification.md` — decisões batidas
+> - `PRODUCT-SPEC-gamification.md` — fórmulas, medalhas, KPIs
+> - `UX-SPEC-gamification.md` — paleta de efeitos, layouts
+> - `DEV-PLAN-gamification.md` — schema, endpoints, módulos
+> - `QA-PLAN-gamification.md` — 44 critérios, 10 cenários Playwright
 
 ## Produção
 
@@ -16,152 +18,153 @@
 - **Repo:** https://github.com/mr-velvet/quiz (branch `master`)
 - **Porta interna:** 5034
 - **Container:** Node 20 + Express + Postgres compartilhado da plataforma did.lu
-- **Banco:** `quiz` no postgres da did.lu (criado via `CREATE DATABASE quiz` — `new-app.sh` não roda em app pré-existente que mudou de `database: false` pra `true`)
+- **Banco:** `quiz` no postgres da did.lu
 - **Health:** `GET /api/health` → `{"status":"ok","service":"quiz"}`
 - **Deploy:** `cd ~/ved/devops-workflow-2026 && .\scripts\did.ps1 deploy quiz`
-- **Pasta local:** `~/ved/quiz/`
 
 ### Env vars necessárias em produção
 - `OPENAI_API_KEY` — pro TTS (tts-1).
 - `DATABASE_URL` — injetada pela plataforma.
 - `GCS_BUCKET` — default `didlu-imagestore`.
-- Token de upload GCS: via metadata server da VM GCP.
+- `DEV_TOKEN` (opcional) — pra liberar `/api/dev/*` em prod.
 
-## Estado atual — implementado
+## Sprints entregues
 
-### MVP base
-- Home + criação de deck via texto (TAB/`;`/` - `/`,` auto-detecta).
-- Modal custom (sem `confirm()`/`alert()`).
-- Hash router com cleanup registry + invalidação de render assíncrono via token.
-- Atalhos consistentes nos 5 modos.
-- Mobile responsivo (breakpoints 600/480).
-- 5 modos de jogo (flashcards, MC, escrever, match, speed).
+### Sprint 1 — MVP (5 modos, deck via texto, modal custom, router)
+### Sprint 2 — TTS (OpenAI tts-1, cache GCS)
+### Sprint 3 — Ownership/Visibility/Pastas/Explore
+### Sprint 4 — Gamificação ✅ (atual)
 
-### TTS (sprint anterior)
-- Backend `server/tts.js`: OpenAI `tts-1`, cache GCS.
-- URL pública via `st.did.lu/quiz/tts/<hash>.mp3`.
-- Hash determinístico = `sha256(model|voice|lang|text).slice(0,24)`.
-- Cache global entre usuários.
+Adiciona feedback emocional ao acerto + progressão de longo prazo:
+- **XP por modo** (Flashcards 5, MC 10, Match 8, Speed 6, Write 20), modulado
+  por dificuldade do card (×0.5 dominado, ×1.0 novo, ×1.5 aprendendo) e combo
+  (até ×2.0 cap em combo 30+). Bônus +50/+100 por sessão 100%.
+- **Combo visual** no canto da tela, com som que escala por tier (5/10/20/30).
+- **Confetti custom** em canvas (sem libs), 80 mobile/150 desktop, auto-pause em
+  document.hidden, fade pra reduced-motion.
+- **Streak diário** com corte 04:00 local + grace de 1 dia/semana. Marcos 3/7/14/30/60/100/365.
+- **18 medalhas** retroativas (onboarding, criação, performance, combo, mode-específico, mastery, streak).
+- **Nível global** com curva exponencial (Nv2=100, Nv5=1k, Nv10=16k, Nv20=120k, Nv50=3M).
+- **Nível por deck** com cap 10 (Novo → Lenda do deck).
+- **Topbar redesenhada:** brand + streak + level pill + mute + me (avatar).
+- **Tela `/eu`:** header com nível/XP/streak, heatmap 30d estilo GitHub,
+  grid de 18 medalhas (lockeds em grayscale), top decks com nível e barra.
+- **9 sons** gerados via sfx-gen (correct, wrong, combo5/10/20, level-up, medal, record, finish).
+  ON desktop / OFF mobile default. Toggle global + atalho `M`.
+- **PWA:** manifest.json, service worker (cache-first estáticos),
+  ícones 192/512 maskable + apple-touch-icon. Install prompt mobile (Android/iOS)
+  com dismiss 30 dias.
+- **Backend autoritativo:** XP/medalhas calculados server-side no finish.
+  Cliente bufferiza eventos e envia tudo no finish (defensivo: flush periódico em
+  sessões >5min). Anti-cheat MVP: duration_ms ≥1s, XP capado em 5000/sessão.
+- **a11y:** prefers-reduced-motion respeitado (desliga confetti, pulses), aria-live
+  na topbar XP, role=alert em medal-toast.
+- **Debug hooks** pra QA: `window.__flashyDebug.resetStats() / grantMedal(code) /
+  fastForwardDay(n) / fireMedal(code)`. Endpoints `/api/dev/*` gated por DEV_TOKEN
+  em prod.
 
-### Sprint ownership/visibility/folders/Explore (2026-05-20) ✅
-- **Postgres em produção.** Schema com users (anônimos/logados/system), folders, decks, cards, reports. Migrations versionadas em `migrations/`.
-- **Identidade anônima** via cookie `flashy_aid` (UUID v4, max-age 10 anos, SameSite=Lax). Espelhado em `localStorage:flashy:aid` como backup.
-- **Ownership:** todo deck pertence a um user. Edit/delete só dono. Anônimo pode criar/publicar (regra relaxada — uso doméstico por enquanto).
-- **Visibilidade público/privado:** default público. Toggle no modal criar deck. Deck privado retorna 404 pra não-dono (não vaza existência).
-- **Pastas:** pessoais, label-only. Um deck em 0 ou 1 pasta. Deletar pasta não deleta decks.
-- **Tela Explorar:** decks públicos com busca + ordenação (Populares/Recentes), paginação 20/página.
-- **Clone:** qualquer um clona deck público, vira deck novo do clonador. Atribuição "baseado em X" por 30 dias.
-- **Rate limit:** 20 decks/dia por anônimo, 100/dia logado. Máximo 2000 cards/deck.
-- **Migração automática:** primeiro load lê `localStorage:flashy:v1`, sobe decks pro backend, preserva `card.audio`. Marca `flashy:migrated_v1`. Backup local mantido por 1 release.
-- **Decks seed** (Capitais SA, Vocabulário) agora são públicos no banco com owner `system`. Aparecem em Explorar, não em "Meus".
-- **Components UI novos:** icons.js, toggle.js, dropdown.js, tabs.js, toast.js, skeleton.js.
+### Migration nova (003_gamification.sql)
+6 tabelas: `user_stats`, `deck_stats`, `medals` (catálogo 18), `user_medals`,
+`study_sessions`, `session_events`.
 
-### Bugs encontrados e corrigidos
-- ✅ Modal-backdrop preso bloqueava cliques após navegação. Fix: `closeAllModals()` no router antes de cada render + modal fecha em `hashchange`.
-- ✅ `cardCount` zerado na home — ternário caía em `cards.length` (array vazio = 0). Fix: usa `cards.length || cardCount || 0`.
-- ✅ `flashy_aid` não espelhava em localStorage. Fix: `bootstrap()` grava após `api.me()`.
-- ✅ Render assíncrono do detalhe sobrescrevia tela do modo de jogo. Fix: token de render no `root`.
-- ✅ **Loop infinito no detalhe do deck:** `fetchDeck` emitia `flashy:change` → onChange disparava render → render chamava fetchDeck → ... Fix: fetchDeck só emite se a `myDeckOrder` muda de fato.
-
-### QA E2E validado (Playwright)
-- Criar deck → fechar browser → reabrir → deck persiste (motivação original da sprint). ✅
-- Usuário B (cookie limpo) vê deck público de A em Explorar, não vê privado. ✅
-- URL direta de privado de outro → 404. ✅
-- Duplicar deck público funciona, vira do clonador. ✅
-- Pastas: criar/mover/filtrar/deletar (decks voltam pra "Sem pasta"). ✅
-- Toggle público→privado dinâmico funciona, sai do Explorar. ✅
-- Modos de jogo abrem corretamente após click. ✅
-- Migração de localStorage v1 funciona. ✅
-- Rate limit (2001 cards) retorna 400. ✅
-
----
-
-## Sprint atual: estabilizada. Próximas opções
-
-### 1. Polimento / observabilidade (1-2 dias)
-- Reports admin UI (endpoint existe, sem interface).
-- Limpar `flashy:v1` após N dias da migração.
-- Logging estruturado das mutations no backend.
-- Métricas básicas (decks criados/dia, sessões).
-
-### 2. Login Logto (1-2 dias)
-- Setar `logto: true` no did.json.
-- Fluxo de claim do anonymous_id pro user logado.
-- Tela de perfil mínima.
-- Trocar "por anônimo" em decks públicos por `@nome` real.
-
-### 3. Gamificação (planejada em CONCEPTS.md, plano em PROGRESS antigo)
-- XP, combo, medalhas, streak diário, sons.
-- Sprint maior (3-5 dias).
-
-### 4. Modo escrever bidirecional, edição manual de card, busca em deck grande
-- Backlog menor; aproveita pra polir UX existente.
-
----
-
-## Riscos / pontos de atenção
-
-- **Banco compartilhado:** se uma migration ruim corromper algo, afeta só DB `quiz`. Mas atenção em qualquer drop/alter.
-- **Soft delete sem UI de restore:** 30 dias retenção, mas sem caminho na UI. Quem deletou por engano precisa pedir.
-- **Anonymous_id em 2 browsers:** continua sendo 2 usuários distintos. Resolve com login (claim).
-- **OpenAI key:** chave única do toolbelt (uso doméstico). Cache GCS amortiza.
-- **`removed_by_admin`:** backend respeita mas UI pra admin marcar não existe. Hoje seria via SQL direto.
-- **Sem login = sem claim:** decks anônimos só existem no browser onde foram criados. Aceito até Logto entrar.
-
----
-
-## Como rodar local
-
-```bash
-npm install
-npm run dev    # vite, sem backend (só UI, sem persistência)
+### API nova
+```
+POST   /api/sessions                       cria sessão pendente
+POST   /api/sessions/:id/event             flush periódico (opcional)
+POST   /api/sessions/:id/finish            fecha, calcula XP, retorna medalhas
+GET    /api/sessions/:id?debug=1           debug
+GET    /api/me/stats?days=30&debug=1       snapshot + heatmap + recent
+GET    /api/me/medals                      catálogo + earned
+GET    /api/me/decks-top                   top decks por XP
+GET    /api/decks/:id/stats                stats do deck pro user atual
+POST   /api/dev/reset-stats                debug only
+POST   /api/dev/grant-medal                debug only
+POST   /api/dev/fast-forward               debug only
 ```
 
-Pra testar com backend local, precisa Postgres rodando + env vars. Recomendação: testar mudanças direto em staging via deploy (`did.ps1 deploy quiz` é rápido — 30s).
-
----
+### Loop infinito conhecido — evitado
+`flashy:change` (CustomEvent global) continua sendo usado pelo store, mas a
+gamificação NÃO usa esse canal. `src/core/events.js` tem bus próprio (Set<fn>)
+que emite `'statsChange'`, `'correct'`, `'wrong'`, `'comboMilestone'`,
+`'medalEarned'`, etc. Topbar escuta `statsChange` e re-renderiza chunk-da-direita
+(cleanup via `registerCleanup` do router).
 
 ## Arquivos-chave
 
 ```
 quiz/
-├── did.json               # database: true, migrations: migrations/
-├── Dockerfile
-├── server.js              # Express, monta rotas
-├── server/
-│   ├── auth.js            # middleware attachUser (cookie flashy_aid)
-│   ├── db.js              # pg pool
-│   ├── tts.js             # TTS endpoint (sprint anterior)
-│   └── routes/
-│       ├── me.js
-│       ├── decks.js
-│       ├── cards.js
-│       ├── folders.js
-│       └── explore.js
+├── did.json
+├── Dockerfile               (copia public/sounds/, manifest, sw, ícones pro dist)
+├── server.js                (monta sessions, stats, dev routers + cleanup loop)
 ├── migrations/
-│   ├── 001_init.sql       # schema completo
-│   └── 002_seeds.sql      # user system + 2 decks seed públicos
+│   ├── 001_init.sql
+│   ├── 002_seeds.sql
+│   └── 003_gamification.sql (novo — 6 tabelas + 18 medalhas)
+├── server/
+│   ├── gamification.js      (fórmulas puras: calcXp, levelFromXp, updateStreak,
+│   │                         evaluateMedals, ...)
+│   ├── routes/
+│   │   ├── sessions.js      (POST /, /:id/event, /:id/finish)
+│   │   ├── stats.js         (/me/stats, /me/medals, /me/decks-top, /decks/:id/stats)
+│   │   └── dev.js           (reset/grant/fast-forward)
+│   ├── auth.js, db.js, tts.js
+│   └── routes/me, decks, cards, folders, explore
+├── public/
+│   ├── manifest.json        (PWA)
+│   ├── sw.js                (service worker)
+│   ├── sounds/              (9 wavs gerados via sfx-gen)
+│   └── assets/icon-192.png, icon-512.png, *-maskable.png, apple-touch-icon.png
 ├── src/
-│   ├── main.js            # boot: migrate → bootstrap → start
 │   ├── core/
-│   │   ├── api.js         # client REST
-│   │   ├── store.js       # cache em memória + migrações
-│   │   ├── audio.js       # TTS client
-│   │   └── util.js        # el(), helpers
+│   │   ├── events.js        (bus isolado, NÃO usa flashy:change)
+│   │   ├── stats.js         (cache user_stats + sync)
+│   │   ├── medals.js        (catálogo local + antecipação visual)
+│   │   ├── sfx.js           (pool de Audio, mute, volume)
+│   │   ├── sessionLoop.js   (wrapper de sessão — startSession/onCorrect/finish)
+│   │   ├── pwa.js           (registra SW)
+│   │   ├── debug.js         (window.__flashyDebug)
+│   │   └── api.js, store.js, audio.js, util.js
 │   ├── ui/
-│   │   ├── router.js
-│   │   ├── home.js        # tabs + chips de pasta + grid
-│   │   ├── deck.js        # detalhe com ações condicionais
-│   │   ├── explore.js     # tela nova
-│   │   ├── folders.js     # tela nova
-│   │   ├── topbar.js
-│   │   ├── modal.js       # closeAllModals
-│   │   ├── icons.js       # SVG inline
-│   │   ├── toggle.js
-│   │   ├── dropdown.js
-│   │   ├── tabs.js
-│   │   ├── toast.js
-│   │   └── skeleton.js
-│   └── games/             # 5 modos (inalterados)
-└── specs/                 # decisões + product + ux desta sprint
+│   │   ├── topbar.js        (refactor: streak + level + mute + me)
+│   │   ├── streakBadge.js
+│   │   ├── levelBadge.js
+│   │   ├── comboOverlay.js
+│   │   ├── confetti.js      (canvas custom)
+│   │   ├── medalToast.js
+│   │   ├── xpCounter.js     (animateNumber, floatingXp)
+│   │   ├── sessionEndModal.js (substitui renderResult dos games)
+│   │   ├── heatmap.js       (grid 7×N GitHub-style)
+│   │   ├── me.js            (rota /eu)
+│   │   ├── gamificationOverlay.js (host de combo + medal toast)
+│   │   ├── installPrompt.js (Android/Chrome + iOS)
+│   │   └── deck, home, explore, folders, modal, etc.
+│   └── games/               (5 refatorados pra usar sessionLoop)
+└── specs/                   (4 specs + DECISIONS)
 ```
+
+## Backlog / próximas opções
+
+### A. Polimento de gamificação (1-2 dias)
+- Banner inline na home no 4º dia ("🔥 Dia 4 da ofensiva").
+- Lembrete "faltam X XP pro próximo nível" quando ≥90%.
+- Filtrar medalhas por categoria na tela /eu.
+- Sons em mp3 (com ffmpeg) pra economizar bandwidth (wav é 5×).
+- Antecipação de level-up via curva client (sem aguardar finish).
+
+### B. Login Logto (1-2 dias)
+- Setar `logto: true` no did.json.
+- Claim do anonymous_id → user logado (preserva XP/streak/medalhas).
+- Trocar "anônimo" em decks públicos por `@nome`.
+
+### C. Modo escrever bidirecional, edição manual de card
+
+## Riscos atuais
+
+- **Anonymous_id em 2 browsers** = 2 users distintos com XPs separados.
+  Resolve com login.
+- **Sons em WAV** (~1.7MB total) — funciona mas consome bandwidth. Converter
+  pra mp3 economizaria 5× quando ffmpeg estiver disponível.
+- **Anti-cheat fraco**: aceita confiança no client por ora. Anti-cheat formal
+  só faz sentido quando entrar ranking (categoricamente fora pra MVP).
+- **PWA install prompt mobile**: testado no design mas precisa validação em
+  device real (iOS Safari + Android Chrome).
