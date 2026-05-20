@@ -84,6 +84,12 @@ function normalizeCard(c) {
 export async function bootstrap() {
   try {
     currentUser = await api.me();
+    // Espelha o id em localStorage como backup (cookie é fonte de verdade,
+    // mas se cookie for limpo num cenário onde localStorage sobrevive, dá pra
+    // tentar recuperar manualmente).
+    if (currentUser && currentUser.id) {
+      try { localStorage.setItem('flashy:aid', currentUser.id); } catch {}
+    }
   } catch (e) {
     // Sem user: degrada pra estado vazio. Não bloqueia o app.
     currentUser = null;

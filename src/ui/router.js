@@ -17,6 +17,7 @@ import { renderWrite } from '../games/write.js';
 import { renderMatch } from '../games/match.js';
 import { renderSpeed } from '../games/speed.js';
 import { onChange } from '../core/util.js';
+import { closeAllModals } from './modal.js';
 
 const root = () => document.getElementById('app');
 
@@ -59,6 +60,7 @@ function runCleanups() {
 
 function render() {
   runCleanups();
+  closeAllModals();
   const { parts, query } = parseHash();
   const app = root();
   app.innerHTML = '';

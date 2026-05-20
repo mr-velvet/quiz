@@ -70,7 +70,7 @@ function renderDeckGrid(folderFilter) {
   if (decks.length === 0) return grid;
 
   for (const deck of decks) {
-    const total = deck.cards ? deck.cards.length : (deck.cardCount || 0);
+    const total = (deck.cards && deck.cards.length) || deck.cardCount || 0;
     const seen = (deck.cards || []).filter(c => c.stats && c.stats.lastSeenAt > 0).length;
     const correct = (deck.cards || []).reduce((s, c) => s + ((c.stats && c.stats.correct) || 0), 0);
     const pct = total ? Math.round((seen / total) * 100) : 0;
