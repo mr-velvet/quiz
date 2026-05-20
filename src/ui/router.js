@@ -1,11 +1,16 @@
 // Roteador simples baseado em hash. Sem framework.
 // Rotas:
-//   #/                       → home
-//   #/deck/:id               → tela do deck
+//   #/                       → home (meus decks)
+//   #/?folder=<id>           → home filtrada por pasta
+//   #/explorar               → tela Explorar
+//   #/pastas                 → tela Pastas
+//   #/deck/:id               → detalhe do deck
 //   #/play/:id/:mode         → modo de jogo
 
 import { renderHome } from './home.js';
 import { renderDeck } from './deck.js';
+import { renderExplore } from './explore.js';
+import { renderFolders } from './folders.js';
 import { renderFlashcards } from '../games/flashcards.js';
 import { renderMultipleChoice } from '../games/multiple-choice.js';
 import { renderWrite } from '../games/write.js';
@@ -15,10 +20,20 @@ import { onChange } from '../core/util.js';
 
 const root = () => document.getElementById('app');
 
+// Hash format: '#/path?query'. Parse separately.
 function parseHash() {
-  const h = (location.hash || '#/').slice(1);
-  const parts = h.split('/').filter(Boolean);
-  return parts;
+  const raw = (location.hash || '#/').slice(1);
+  const [pathPart, queryPart = ''] = raw.split('?');
+  const parts = pathPart.split('/').filter(Boolean);
+  const query = {};
+  if (queryPart) {
+    for (const seg of queryPart.split('&')) {
+      const [k, v] = seg.split('=');
+      if (!k) continue;
+      query[decodeURIComponent(k)] = v ? decodeURIComponent(v) : '';
+    }
+  }
+  return { parts, query };
 }
 
 export function go(path) {
@@ -30,13 +45,10 @@ export function back() {
   else go('/');
 }
 
-// Re-renderiza a tela atual sem mudar a URL.
-// Útil pra "jogar de novo" — re-instancia o jogo do zero sem reload do navegador.
 export function replay() {
   render();
 }
 
-// Cleanup callbacks registrados pela tela atual.
 const cleanups = [];
 export function registerCleanup(fn) { cleanups.push(fn); }
 function runCleanups() {
@@ -47,12 +59,22 @@ function runCleanups() {
 
 function render() {
   runCleanups();
-  const parts = parseHash();
+  const { parts, query } = parseHash();
   const app = root();
   app.innerHTML = '';
 
-  if (parts.length === 0 || parts[0] === '') {
-    renderHome(app);
+  if (parts.length === 0) {
+    renderHome(app, { folderFilter: query.folder || null });
+    return;
+  }
+
+  if (parts[0] === 'explorar') {
+    renderExplore(app);
+    return;
+  }
+
+  if (parts[0] === 'pastas') {
+    renderFolders(app);
     return;
   }
 
@@ -78,11 +100,11 @@ function render() {
 
 export function start() {
   window.addEventListener('hashchange', render);
-  // Re-renderiza tela atual quando store muda (deck criado, card editado, etc.)
   onChange(() => {
-    // Só re-renderiza home/deck — jogos têm estado interno e não devem reiniciar.
-    const parts = parseHash();
-    if (parts.length === 0 || parts[0] === 'deck') render();
+    const { parts } = parseHash();
+    // Re-render só pra telas que mostram lista (home, explore, pastas, deck).
+    // Jogos têm estado interno e não devem reiniciar.
+    if (parts.length === 0 || parts[0] === 'deck' || parts[0] === 'explorar' || parts[0] === 'pastas') render();
   });
   render();
 }

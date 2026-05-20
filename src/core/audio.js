@@ -1,7 +1,8 @@
 // Áudio dos cards: detecta idioma, pede TTS ao backend, cacheia URL no card,
 // toca via <audio> compartilhado.
 
-import { saveDeck, getDeck } from './store.js';
+import { getDeck } from './store.js';
+import { setCardAudio } from './api.js';
 
 const audioEl = new Audio();
 audioEl.preload = 'auto';
@@ -111,29 +112,31 @@ export async function playCardAudio(deckId, cardId, side, langHint) {
     }
     if (myToken !== requestToken) return { aborted: true };
     entry = { url: res.url, lang, hash: res.hash, generatedAt: Date.now() };
-    // Re-ler deck pra fazer read-modify-write atômico.
+    // Atualiza cache local (otimista) e persiste no backend.
     const fresh = getDeck(deckId);
     if (fresh) {
       const freshCard = fresh.cards.find(c => c.id === cardId);
       if (freshCard) {
         freshCard.audio = freshCard.audio || {};
         freshCard.audio[side] = entry;
-        saveDeck(fresh);
       }
     }
+    // Persistência só funciona pra dono do deck — em deck público de outro o
+    // backend responde 404 e a gente apenas ignora (cache local segura a sessão).
+    setCardAudio(cardId, side, entry).catch(() => {});
   }
 
   if (myToken !== requestToken) return { aborted: true };
 
   audioEl.src = entry.url;
   audioEl.onerror = () => {
-    // URL inválida (cache obsoleto?). Invalida e força regeneração na próxima.
+    // URL inválida (cache obsoleto?). Invalida do cache em memória — backend
+    // será re-pedido na próxima tentativa.
     const fresh = getDeck(deckId);
     if (fresh) {
       const freshCard = fresh.cards.find(c => c.id === cardId);
       if (freshCard?.audio?.[side]?.url === entry.url) {
         delete freshCard.audio[side];
-        saveDeck(fresh);
       }
     }
   };

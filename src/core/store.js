@@ -1,136 +1,372 @@
-// Storage layer — anonymous nativo via localStorage.
-// Estrutura:
-//   { decks: { [id]: Deck }, order: [deckId...] }
-// Card: { id, front, back, stats: { correct, wrong, lastSeenAt } }
-// Deck: { id, name, createdAt, cards: [Card], records: { match, speed } }
+// Storage layer — agora backed por backend REST (server/routes/*),
+// com cache em memória pra leituras síncronas (UI e games dependem disso).
+//
+// Mantém a API histórica usada por games/UI:
+//   listDecks(), getDeck(id), createDeck(name, cards), addCards(deckId, cards),
+//   saveDeck(deck), recordCardResult(deckId, cardId, correct),
+//   recordGameScore(deckId, gameKey, score), parseImport(text, sep?),
+//   seedIfEmpty() — NOOP (seeds vivem no backend agora).
+//
+// Diferença importante: getDeck() devolve do cache, então:
+//   - Decks do user atual: já populados por bootstrap().
+//   - Decks de outros (vindos de Explorar): populados quando o usuário clica
+//     e abrimos detalhe — chamadores que ainda não têm em cache devem usar
+//     `fetchDeck(id)` (assíncrono) antes.
+//
+// `flashy:change` continua sendo o canal de invalidação reativa.
 
-const KEY = 'flashy:v1';
+import * as api from './api.js';
 
-function uid() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-}
+const MIGRATED_KEY = 'flashy:migrated_v1';
+const LEGACY_KEY = 'flashy:v1';
 
-function blankState() {
-  return { decks: {}, order: [] };
-}
+const SEED_NAMES = new Set([
+  'Capitais — América do Sul',
+  'Vocabulário — Inglês ↔ Português'
+]);
 
-function read() {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return blankState();
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return blankState();
-    if (!parsed.decks) parsed.decks = {};
-    if (!Array.isArray(parsed.order)) parsed.order = Object.keys(parsed.decks);
-    return parsed;
-  } catch {
-    return blankState();
-  }
-}
+// ---------- Estado em memória ----------
 
-function write(state) {
-  localStorage.setItem(KEY, JSON.stringify(state));
-  // dispatch event for reactive listeners
+// Cache de decks completos (com cards). Chave = deck.id.
+const deckCache = new Map();
+// Lista ordenada de IDs dos meus decks (do mais recente ao mais antigo).
+let myDeckOrder = [];
+// User atual ({ id, kind }) após bootstrap.
+let currentUser = null;
+// Cache de folders ({ id, name, deck_count }).
+let foldersCache = [];
+
+function emit() {
   window.dispatchEvent(new CustomEvent('flashy:change'));
 }
 
-export function listDecks() {
-  const s = read();
-  return s.order.map(id => s.decks[id]).filter(Boolean);
-}
-
-export function getDeck(id) {
-  const s = read();
-  return s.decks[id] || null;
-}
-
-export function createDeck(name, cards = []) {
-  const s = read();
-  const id = uid();
-  const deck = {
-    id,
-    name: (name || 'Sem título').trim(),
-    createdAt: Date.now(),
-    cards: cards.map(c => ({
-      id: uid(),
-      front: c.front,
-      back: c.back,
-      stats: { correct: 0, wrong: 0, lastSeenAt: 0 }
-    })),
-    records: { match: null, speed: null }
+// Normaliza deck vindo do backend pra forma usada pelo client.
+// Backend manda: { id, name, isPublic, folderId, createdAt, updatedAt, records,
+//                  isMine, ownerId?, sourceDeckId, sourceName?, clonedAt,
+//                  cloneCount?, cardCount?, cards? }
+function normalizeDeck(remote, existing) {
+  const cards = Array.isArray(remote.cards)
+    ? remote.cards.map(normalizeCard)
+    : (existing && existing.cards) || [];
+  return {
+    id: remote.id,
+    name: remote.name,
+    createdAt: remote.createdAt || (existing && existing.createdAt) || Date.now(),
+    updatedAt: remote.updatedAt || null,
+    isPublic: remote.isPublic !== false,
+    isMine: !!remote.isMine,
+    ownerId: remote.ownerId || (existing && existing.ownerId) || null,
+    folderId: remote.folderId || null,
+    sourceDeckId: remote.sourceDeckId || null,
+    sourceName: remote.sourceName || null,
+    clonedAt: remote.clonedAt || null,
+    cloneCount: remote.cloneCount != null ? remote.cloneCount : (existing && existing.cloneCount) || 0,
+    cardCount: remote.cardCount != null ? remote.cardCount : cards.length,
+    records: remote.records || (existing && existing.records) || {},
+    cards
   };
-  s.decks[id] = deck;
-  s.order.unshift(id);
-  write(s);
-  return deck;
 }
 
-export function deleteDeck(id) {
-  const s = read();
-  delete s.decks[id];
-  s.order = s.order.filter(x => x !== id);
-  write(s);
+function normalizeCard(c) {
+  return {
+    id: c.id,
+    front: c.front,
+    back: c.back,
+    position: c.position,
+    audio: c.audio || null,
+    stats: c.stats || { correct: 0, wrong: 0, lastSeenAt: 0 }
+  };
 }
 
-export function renameDeck(id, name) {
-  const s = read();
-  if (!s.decks[id]) return;
-  s.decks[id].name = name.trim() || 'Sem título';
-  write(s);
-}
+// ---------- Bootstrap ----------
 
-export function addCards(deckId, cards) {
-  const s = read();
-  const deck = s.decks[deckId];
-  if (!deck) return;
-  for (const c of cards) {
-    deck.cards.push({
-      id: uid(),
-      front: c.front,
-      back: c.back,
-      stats: { correct: 0, wrong: 0, lastSeenAt: 0 }
-    });
+// Garante user atual e popula caches. Chamado no boot pelo main.js.
+export async function bootstrap() {
+  try {
+    currentUser = await api.me();
+  } catch (e) {
+    // Sem user: degrada pra estado vazio. Não bloqueia o app.
+    currentUser = null;
   }
-  write(s);
+
+  await reloadDecks();
+  try {
+    foldersCache = await api.listFolders();
+  } catch {
+    foldersCache = [];
+  }
+  emit();
 }
 
-// Persiste mutação direta no deck (ex.: card.audio gerado pelo TTS).
-// Usa read-modify-write: copia card.audio do deck passado pra versão fresca,
-// evitando que mutações concorrentes em outras tabs sejam sobrescritas.
-export function saveDeck(deck) {
-  if (!deck || !deck.id) return;
-  const s = read();
-  const remote = s.decks[deck.id];
-  if (!remote) return;
-  // Merge: pra cada card no deck passado, copia o audio se mudou.
-  for (const card of deck.cards) {
-    const remoteCard = remote.cards.find(c => c.id === card.id);
-    if (remoteCard && card.audio) {
-      remoteCard.audio = { ...(remoteCard.audio || {}), ...card.audio };
+export function getCurrentUser() {
+  return currentUser;
+}
+
+// Recarrega lista de decks do user atual. Mantém caches de decks visitados.
+export async function reloadDecks() {
+  try {
+    const remote = await api.listDecks();
+    myDeckOrder = remote.map(d => d.id);
+    for (const d of remote) {
+      // Lista não traz cards — preserva cards de cache se já tínhamos.
+      const existing = deckCache.get(d.id);
+      deckCache.set(d.id, normalizeDeck(d, existing));
+    }
+  } catch {
+    myDeckOrder = [];
+  }
+}
+
+// ---------- Migração localStorage ----------
+
+// Lê o estado legado pra migrar pro backend na primeira vez.
+function readLegacyState() {
+  try {
+    const raw = localStorage.getItem(LEGACY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function migrateLocalStorageIfNeeded() {
+  if (localStorage.getItem(MIGRATED_KEY)) return { skipped: 'already_migrated' };
+  const legacy = readLegacyState();
+  if (!legacy || !legacy.decks) {
+    localStorage.setItem(MIGRATED_KEY, 'true');
+    return { skipped: 'no_legacy' };
+  }
+  const order = Array.isArray(legacy.order) && legacy.order.length
+    ? legacy.order
+    : Object.keys(legacy.decks);
+
+  const migrated = [];
+  const skipped = [];
+  for (const id of order) {
+    const d = legacy.decks[id];
+    if (!d) continue;
+    if (SEED_NAMES.has(d.name)) { skipped.push(d.name); continue; }
+    const cards = (d.cards || [])
+      .map(c => ({ front: c.front, back: c.back }))
+      .filter(c => c.front && c.back);
+    try {
+      const created = await api.createDeck({ name: d.name, cards, isPublic: true });
+      // Recarrega pra ter cards com IDs do backend e preservar audio quando houver.
+      try {
+        const full = await api.getDeck(created.id);
+        // Mapeia audio dos cards legados pelos cards do backend, pareando por (front, back).
+        const audioByPair = new Map();
+        for (const c of (d.cards || [])) {
+          if (c.audio) audioByPair.set(`${c.front}\x1f${c.back}`, c.audio);
+        }
+        for (const remoteCard of (full.cards || [])) {
+          const key = `${remoteCard.front}\x1f${remoteCard.back}`;
+          const audio = audioByPair.get(key);
+          if (audio && (audio.front || audio.back)) {
+            for (const side of ['front', 'back']) {
+              const entry = audio[side];
+              if (entry && entry.url) {
+                try { await api.setCardAudio(remoteCard.id, side, entry); } catch {}
+              }
+            }
+          }
+        }
+      } catch {}
+      migrated.push(d.name);
+    } catch (e) {
+      skipped.push(d.name + ' (erro)');
     }
   }
-  write(s);
+  localStorage.setItem(MIGRATED_KEY, 'true');
+  // Mantém flashy:v1 como backup por 1 release (decisão de produto).
+  return { migrated, skipped };
 }
 
+// ---------- API pública (compat games/UI) ----------
+
+export function listDecks() {
+  return myDeckOrder.map(id => deckCache.get(id)).filter(Boolean);
+}
+
+// Retorna deck do cache, ou null. Chamadores assíncronos devem usar fetchDeck().
+export function getDeck(id) {
+  return deckCache.get(id) || null;
+}
+
+// Versão assíncrona — busca do backend, atualiza cache. Útil pra detalhe do deck
+// quando vem de Explorar (não estava no cache de "meus").
+export async function fetchDeck(id) {
+  const remote = await api.getDeck(id);
+  const existing = deckCache.get(id);
+  const norm = normalizeDeck(remote, existing);
+  deckCache.set(id, norm);
+  // Se passou a ser meu (clone, etc.) e ainda não está na order, prepend.
+  if (norm.isMine && !myDeckOrder.includes(id)) myDeckOrder = [id, ...myDeckOrder];
+  emit();
+  return norm;
+}
+
+export function listFolders() {
+  return foldersCache.slice();
+}
+
+export async function reloadFolders() {
+  try { foldersCache = await api.listFolders(); }
+  catch { foldersCache = []; }
+  emit();
+  return foldersCache;
+}
+
+export async function createFolder(name) {
+  const f = await api.createFolder(name);
+  foldersCache = [...foldersCache, { ...f, deck_count: 0 }];
+  emit();
+  return f;
+}
+
+export async function renameFolder(id, name) {
+  const f = await api.patchFolder(id, { name });
+  foldersCache = foldersCache.map(x => x.id === id ? { ...x, name: f.name } : x);
+  emit();
+  return f;
+}
+
+export async function deleteFolder(id) {
+  await api.deleteFolder(id);
+  foldersCache = foldersCache.filter(x => x.id !== id);
+  // Decks que estavam nessa pasta viram folder_id=null — recarrega lista.
+  await reloadDecks();
+  emit();
+}
+
+// Cria deck. Aceita assinatura legada `createDeck(name, cards)` E nova `createDeck({...})`.
+// Retorna o deck completo (com cards).
+export async function createDeck(nameOrOpts, cards) {
+  const opts = (typeof nameOrOpts === 'object' && nameOrOpts !== null)
+    ? nameOrOpts
+    : { name: nameOrOpts, cards: cards || [] };
+  const created = await api.createDeck({
+    name: opts.name,
+    cards: opts.cards || [],
+    isPublic: opts.isPublic !== undefined ? opts.isPublic : true,
+    folderId: opts.folderId || null
+  });
+  // Backend só devolve metadados em POST (sem cards). Refaz GET pra trazer cards.
+  let full;
+  try { full = await api.getDeck(created.id); }
+  catch { full = created; }
+  const norm = normalizeDeck(full);
+  deckCache.set(norm.id, norm);
+  if (!myDeckOrder.includes(norm.id)) myDeckOrder = [norm.id, ...myDeckOrder];
+  emit();
+  return norm;
+}
+
+export async function deleteDeck(id) {
+  await api.deleteDeck(id);
+  deckCache.delete(id);
+  myDeckOrder = myDeckOrder.filter(x => x !== id);
+  emit();
+}
+
+export async function renameDeck(id, name) {
+  const updated = await api.patchDeck(id, { name });
+  const existing = deckCache.get(id);
+  deckCache.set(id, normalizeDeck(updated, existing));
+  emit();
+}
+
+export async function setDeckVisibility(id, isPublic) {
+  const updated = await api.patchDeck(id, { isPublic });
+  const existing = deckCache.get(id);
+  deckCache.set(id, normalizeDeck(updated, existing));
+  emit();
+}
+
+export async function moveDeckToFolder(id, folderId) {
+  const updated = await api.patchDeck(id, { folderId });
+  const existing = deckCache.get(id);
+  deckCache.set(id, normalizeDeck(updated, existing));
+  // Atualiza contagem de pastas.
+  reloadFolders().catch(() => {});
+  emit();
+}
+
+export async function addCards(deckId, cards) {
+  const r = await api.addCards(deckId, cards);
+  const deck = deckCache.get(deckId);
+  if (deck) {
+    deck.cards = [...deck.cards, ...(r.cards || []).map(normalizeCard)];
+    deck.cardCount = deck.cards.length;
+    deckCache.set(deckId, deck);
+  }
+  emit();
+}
+
+export async function cloneDeck(id) {
+  const cloned = await api.cloneDeck(id);
+  // Backend não devolve cards do clone — refetch.
+  const full = await api.getDeck(cloned.id);
+  const norm = normalizeDeck(full);
+  deckCache.set(norm.id, norm);
+  if (!myDeckOrder.includes(norm.id)) myDeckOrder = [norm.id, ...myDeckOrder];
+  emit();
+  return norm;
+}
+
+// Salva mutação local de card.audio (legado — TTS chamava saveDeck pra cachear URL).
+// Agora: identifica diff vs cache e dispara setCardAudio pros que mudaram.
+// Mantida pra compat se algo no client ainda chamar — mas audio.js já foi migrado
+// pra chamar `setCardAudio` direto.
+export async function saveDeck(deck) {
+  if (!deck || !deck.id) return;
+  const remote = deckCache.get(deck.id);
+  if (!remote) return;
+  for (const card of deck.cards || []) {
+    if (!card.audio) continue;
+    const remoteCard = remote.cards.find(c => c.id === card.id);
+    if (!remoteCard) continue;
+    for (const side of ['front', 'back']) {
+      const a = card.audio[side];
+      const ra = remoteCard.audio && remoteCard.audio[side];
+      if (a && a.url && (!ra || ra.url !== a.url)) {
+        try { await api.setCardAudio(card.id, side, a); } catch {}
+        remoteCard.audio = { ...(remoteCard.audio || {}), [side]: a };
+      }
+    }
+  }
+  deckCache.set(deck.id, remote);
+  emit();
+}
+
+// Compat com games: chama backend, atualiza cache otimisticamente.
 export function recordCardResult(deckId, cardId, correct) {
-  const s = read();
-  const deck = s.decks[deckId];
-  if (!deck) return;
-  const card = deck.cards.find(c => c.id === cardId);
-  if (!card) return;
-  if (correct) card.stats.correct++;
-  else card.stats.wrong++;
-  card.stats.lastSeenAt = Date.now();
-  write(s);
+  const deck = deckCache.get(deckId);
+  if (deck) {
+    const card = deck.cards.find(c => c.id === cardId);
+    if (card) {
+      if (!card.stats) card.stats = { correct: 0, wrong: 0, lastSeenAt: 0 };
+      if (correct) card.stats.correct++;
+      else card.stats.wrong++;
+      card.stats.lastSeenAt = Date.now();
+    }
+  }
+  // Fire-and-forget: ignora erro (jogo é tempo-real, não pode bloquear).
+  // Em decks não-meus o backend retorna 404 — silenciamos.
+  api.recordCardResult(cardId, correct).catch(() => {});
 }
 
+// `records` é por-deck. Backend tem coluna JSONB `records` mas só dono escreve.
+// PATCH não suporta — mantemos otimista no cache só. (Persistência fica pra sprint
+// futura quando ranking entrar.) Mantemos a função pra não quebrar os jogos.
 export function recordGameScore(deckId, gameKey, score) {
-  const s = read();
-  const deck = s.decks[deckId];
+  const deck = deckCache.get(deckId);
   if (!deck) return;
   if (!deck.records) deck.records = {};
   const prev = deck.records[gameKey];
-  // 'match' menor = melhor (tempo), 'speed' maior = melhor (acertos)
   if (gameKey === 'match') {
     if (!prev || score.timeMs < prev.timeMs) deck.records[gameKey] = { ...score, at: Date.now() };
   } else if (gameKey === 'speed') {
@@ -138,7 +374,7 @@ export function recordGameScore(deckId, gameKey, score) {
   } else {
     deck.records[gameKey] = { ...score, at: Date.now() };
   }
-  write(s);
+  emit();
 }
 
 // Parse texto importado.
@@ -171,40 +407,14 @@ export function parseImport(text, sepHint = 'auto') {
   return cards;
 }
 
-// Seeded decks para o user ver algo na primeira abertura.
-export function seedIfEmpty() {
-  const s = read();
-  if (s.order.length > 0) return;
-  createDeck('Capitais — América do Sul', parseImport(
-    'Brasil\tBrasília\n' +
-    'Argentina\tBuenos Aires\n' +
-    'Uruguai\tMontevidéu\n' +
-    'Chile\tSantiago\n' +
-    'Peru\tLima\n' +
-    'Colômbia\tBogotá\n' +
-    'Venezuela\tCaracas\n' +
-    'Equador\tQuito\n' +
-    'Bolívia\tSucre\n' +
-    'Paraguai\tAssunção\n' +
-    'Guiana\tGeorgetown\n' +
-    'Suriname\tParamaribo'
-  ));
-  createDeck('Vocabulário — Inglês ↔ Português', parseImport(
-    'ephemeral\tefêmero\n' +
-    'serendipity\tserendipidade\n' +
-    'cumbersome\tincômodo\n' +
-    'mundane\tcomum\n' +
-    'whim\tcapricho\n' +
-    'foster\tfomentar\n' +
-    'plight\tdificuldade\n' +
-    'akin\tsemelhante\n' +
-    'thorough\tminucioso\n' +
-    'fleeting\tpassageiro\n' +
-    'cumber\tonerar\n' +
-    'glimpse\tvislumbre'
-  ));
-}
+// Seeds agora vivem no backend (migração SQL). Mantida como NOOP pra compat.
+export function seedIfEmpty() { /* noop */ }
 
 export function exportAll() {
-  return JSON.stringify(read(), null, 2);
+  return JSON.stringify({
+    user: currentUser,
+    decks: Object.fromEntries(deckCache.entries()),
+    order: myDeckOrder,
+    folders: foldersCache
+  }, null, 2);
 }

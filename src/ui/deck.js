@@ -1,9 +1,19 @@
-import { el, escapeHTML } from '../core/util.js';
-import { getDeck, deleteDeck, renameDeck, addCards, parseImport } from '../core/store.js';
+import { el } from '../core/util.js';
+import {
+  getDeck, fetchDeck, deleteDeck, renameDeck, addCards,
+  setDeckVisibility, moveDeckToFolder, cloneDeck,
+  listFolders, createFolder, parseImport
+} from '../core/store.js';
+import * as api from '../core/api.js';
 import { topbar } from './topbar.js';
 import { openModal, confirmModal } from './modal.js';
 import { go } from './router.js';
 import { playCardAudio, speakerButton, detectDeckLang } from '../core/audio.js';
+import { toggle } from './toggle.js';
+import { dropdown } from './dropdown.js';
+import { toast } from './toast.js';
+import { iconLock, iconGlobe, iconKebab } from './icons.js';
+import { deckGridSkeleton } from './skeleton.js';
 
 const MODES = [
   { key: 'flashcards', icon: '🃏', title: 'Flashcards', desc: 'Vire as cartas, marque o que sabe.' },
@@ -14,33 +24,76 @@ const MODES = [
 ];
 
 export function renderDeck(root, deckId) {
-  const deck = getDeck(deckId);
-  if (!deck) { go('/'); return; }
+  // Render assíncrono: busca do backend, atualiza cache.
+  // Mostra topbar e skeleton enquanto carrega — sem flash de "404".
+  const cached = getDeck(deckId);
+  if (cached && cached.cards && cached.cards.length > 0) {
+    paint(root, cached);
+  } else {
+    paintLoading(root);
+  }
+  fetchDeck(deckId).then(d => paint(root, d)).catch(err => {
+    if (err && err.status === 404) {
+      go('/');
+      toast('Esse deck não existe mais.', { kind: 'error' });
+    } else {
+      toast('Erro ao carregar deck.', { kind: 'error' });
+    }
+  });
+}
 
+function paintLoading(root) {
+  root.innerHTML = '';
+  root.appendChild(topbar({ showBack: true }));
+  root.appendChild(el('div', { class: 'stack stack-6' }, [
+    el('div', { class: 'skeleton', style: { height: '36px', width: '60%' } }),
+    deckGridSkeleton(3)
+  ]));
+}
+
+function paint(root, deck) {
+  root.innerHTML = '';
   root.appendChild(topbar({ showBack: true }));
 
-  const total = deck.cards.length;
-  const correct = deck.cards.reduce((s, c) => s + c.stats.correct, 0);
-  const wrong = deck.cards.reduce((s, c) => s + c.stats.wrong, 0);
+  const cards = deck.cards || [];
+  const total = cards.length;
+  const correct = cards.reduce((s, c) => s + ((c.stats && c.stats.correct) || 0), 0);
+  const wrong = cards.reduce((s, c) => s + ((c.stats && c.stats.wrong) || 0), 0);
+
+  const isMine = !!deck.isMine;
+  const isPublic = deck.isPublic !== false;
+
+  // Linha de identidade — só pra deck de outro.
+  const identityLine = !isMine
+    ? el('div', { class: 'tiny muted' }, ['por anônimo'])
+    : null;
+
+  // Atribuição "baseado em X" (30 dias após clone — backend já filtra).
+  const sourceLine = deck.sourceName
+    ? el('div', { class: 'tiny muted' }, [`baseado em "${deck.sourceName}"`])
+    : null;
+
+  // Pills topo: badge visibilidade primeiro (se dono), depois stats.
+  const pills = el('div', { class: 'row gap-2', style: { flexWrap: 'wrap' } });
+  if (isMine) pills.appendChild(visibilityPill(deck));
+  pills.appendChild(el('span', { class: 'pill' }, [`${total} cartas`]));
+  pills.appendChild(el('span', { class: 'pill pill-good' }, [`✓ ${correct}`]));
+  pills.appendChild(el('span', { class: 'pill pill-bad' }, [`✕ ${wrong}`]));
+  if (deck.records?.match) pills.appendChild(el('span', { class: 'pill' }, [`🧩 ${(deck.records.match.timeMs / 1000).toFixed(1)}s`]));
+  if (deck.records?.speed) pills.appendChild(el('span', { class: 'pill' }, [`⚡ ${deck.records.speed.correct}`]));
+
+  // Ações condicionais por ownership.
+  const actions = isMine ? renderOwnerActions(deck) : renderVisitorActions(deck);
 
   root.appendChild(el('div', { class: 'stack stack-6' }, [
-    // Header
-    el('div', { class: 'row-between' }, [
+    el('div', { class: 'row-between deck-header', style: { flexWrap: 'wrap', gap: '12px' } }, [
       el('div', { class: 'stack stack-2' }, [
+        sourceLine,
+        identityLine,
         el('h1', {}, [deck.name]),
-        el('div', { class: 'row gap-2' }, [
-          el('span', { class: 'pill' }, [`${total} cartas`]),
-          el('span', { class: 'pill pill-good' }, [`✓ ${correct}`]),
-          el('span', { class: 'pill pill-bad' }, [`✕ ${wrong}`]),
-          deck.records?.match ? el('span', { class: 'pill' }, [`🧩 ${(deck.records.match.timeMs / 1000).toFixed(1)}s`]) : null,
-          deck.records?.speed ? el('span', { class: 'pill' }, [`⚡ ${deck.records.speed.correct}`]) : null
-        ])
+        pills
       ]),
-      el('div', { class: 'row gap-2' }, [
-        el('button', { class: 'btn btn-sm', onClick: () => openAddCards(deck.id) }, ['+ Cartas']),
-        el('button', { class: 'btn btn-sm', onClick: () => openRename(deck) }, ['Renomear']),
-        el('button', { class: 'btn btn-sm btn-danger', onClick: () => onDelete(deck) }, ['Deletar'])
-      ])
+      actions
     ]),
 
     // Modos
@@ -70,7 +123,7 @@ export function renderDeck(root, deckId) {
         : el('div', { class: 'stack stack-2' },
             (() => {
               const lang = detectDeckLang(deck);
-              return deck.cards.map((c, i) => el('div', {
+              return cards.map((c, i) => el('div', {
                 class: 'panel card-row',
                 style: { padding: '12px 16px' }
               }, [
@@ -79,12 +132,138 @@ export function renderDeck(root, deckId) {
                 el('div', { class: 'card-row-front-audio' }, [speakerButton(() => playCardAudio(deck.id, c.id, 'front', lang?.front))]),
                 el('div', { class: 'muted card-row-back' }, [c.back]),
                 el('div', { class: 'card-row-back-audio' }, [speakerButton(() => playCardAudio(deck.id, c.id, 'back', lang?.back))]),
-                el('div', { class: 'tiny muted card-row-stats' }, [`${c.stats.correct}/${c.stats.correct + c.stats.wrong}`])
+                el('div', { class: 'tiny muted card-row-stats' }, [
+                  isMine ? `${(c.stats && c.stats.correct) || 0}/${((c.stats && c.stats.correct) || 0) + ((c.stats && c.stats.wrong) || 0)}` : ''
+                ])
               ]));
             })()
           )
     ])
   ]));
+}
+
+function visibilityPill(deck) {
+  const isPublic = deck.isPublic !== false;
+  const pill = el('span', {
+    class: 'pill',
+    style: { cursor: 'pointer' },
+    attrs: { title: 'Trocar visibilidade' },
+    onClick: () => toggleVisibility(deck)
+  });
+  if (isPublic) {
+    pill.appendChild(iconGlobe(11));
+    pill.appendChild(document.createTextNode(' Público'));
+  } else {
+    pill.appendChild(iconLock(11));
+    pill.appendChild(document.createTextNode(' Privado'));
+  }
+  return pill;
+}
+
+async function toggleVisibility(deck) {
+  const target = !(deck.isPublic !== false); // toggle
+  const wantPublic = target;
+  // Confirm leve.
+  const title = wantPublic ? 'Tornar deck público?' : 'Tornar privado?';
+  const body = wantPublic
+    ? 'Qualquer um vai poder achar, estudar e duplicar. Você ainda controla a edição.'
+    : 'Some da busca. Quem já duplicou mantém a cópia.';
+  const ok = await openModal({
+    title,
+    content: body,
+    actions: [
+      { label: 'Cancelar', value: false },
+      { label: wantPublic ? 'Tornar público' : 'Tornar privado', value: true, variant: 'primary' }
+    ]
+  });
+  if (!ok) return;
+  try {
+    await setDeckVisibility(deck.id, wantPublic);
+    toast(wantPublic ? 'Agora é público.' : 'Agora é privado.', { kind: 'success' });
+  } catch {
+    toast('Erro ao atualizar.', { kind: 'error' });
+  }
+}
+
+function renderOwnerActions(deck) {
+  // Em mobile, condensa ações em kebab. Em desktop, mostra inline.
+  const isMobile = window.matchMedia('(max-width: 600px)').matches;
+
+  if (isMobile) {
+    const kebabBtn = el('button', { class: 'btn btn-sm btn-icon', attrs: { type: 'button', 'aria-label': 'Mais ações' } });
+    kebabBtn.appendChild(iconKebab(16));
+    const kebab = dropdown({
+      trigger: kebabBtn,
+      align: 'right',
+      getItems: () => [
+        { label: '+ Cartas', onSelect: () => openAddCards(deck.id) },
+        { label: 'Renomear', onSelect: () => openRename(deck) },
+        { label: 'Mover pra pasta', onSelect: () => openMoveFolder(deck) },
+        { separator: true },
+        { label: 'Deletar', onSelect: () => onDelete(deck) }
+      ]
+    });
+    return kebab;
+  }
+
+  return el('div', { class: 'row gap-2', style: { flexWrap: 'wrap' } }, [
+    el('button', { class: 'btn btn-sm', onClick: () => openAddCards(deck.id) }, ['+ Cartas']),
+    el('button', { class: 'btn btn-sm', onClick: () => openRename(deck) }, ['Renomear']),
+    el('button', { class: 'btn btn-sm', onClick: () => openMoveFolder(deck) }, ['Mover']),
+    el('button', { class: 'btn btn-sm btn-danger', onClick: () => onDelete(deck) }, ['Deletar'])
+  ]);
+}
+
+function renderVisitorActions(deck) {
+  return el('div', { class: 'row gap-2', style: { flexWrap: 'wrap' } }, [
+    el('button', {
+      class: 'btn btn-primary btn-sm',
+      onClick: () => onClone(deck)
+    }, ['Duplicar pro meu']),
+    el('button', {
+      class: 'btn btn-sm',
+      onClick: () => onReport(deck)
+    }, ['Reportar'])
+  ]);
+}
+
+async function onClone(deck) {
+  try {
+    const cloned = await cloneDeck(deck.id);
+    toast('Deck duplicado pra você.', { kind: 'success' });
+    go(`/deck/${cloned.id}`);
+  } catch (e) {
+    if (e && e.status === 429) {
+      toast('Limite diário de novos decks atingido. Tente amanhã.', { kind: 'error' });
+    } else {
+      toast('Erro ao duplicar.', { kind: 'error' });
+    }
+  }
+}
+
+async function onReport(deck) {
+  const reasonInput = el('input', { class: 'input', placeholder: 'spam, ofensivo, plágio…' });
+  const detailInput = el('textarea', { class: 'textarea', style: { minHeight: '100px' }, placeholder: 'Detalhes (opcional)' });
+  setTimeout(() => reasonInput.focus(), 50);
+  const ok = await openModal({
+    title: 'Reportar deck',
+    content: el('div', { class: 'stack stack-3' }, [
+      el('div', { class: 'stack stack-2' }, [el('div', { class: 'label' }, ['Motivo']), reasonInput]),
+      el('div', { class: 'stack stack-2' }, [el('div', { class: 'label' }, ['Detalhes']), detailInput])
+    ]),
+    actions: [
+      { label: 'Cancelar', value: false },
+      { label: 'Enviar', value: true, variant: 'primary' }
+    ]
+  });
+  if (!ok) return;
+  if (!reasonInput.value.trim()) return;
+  try {
+    await api.reportDeck(deck.id, reasonInput.value.trim(), detailInput.value.trim());
+    toast('Reporte enviado. Obrigado.', { kind: 'success' });
+  } catch {
+    toast('Erro ao reportar.', { kind: 'error' });
+  }
 }
 
 async function openRename(deck) {
@@ -98,12 +277,77 @@ async function openRename(deck) {
       { label: 'Salvar', value: true, variant: 'primary' }
     ]
   });
-  if (ok) renameDeck(deck.id, input.value);
+  if (!ok) return;
+  try {
+    await renameDeck(deck.id, input.value);
+  } catch {
+    toast('Erro ao renomear.', { kind: 'error' });
+  }
+}
+
+async function openMoveFolder(deck) {
+  const folders = listFolders();
+  if (!folders.length) {
+    // Sem pastas: pede pra criar uma na hora.
+    const name = await promptText('Nova pasta', 'Nome da pasta');
+    if (!name) return;
+    try {
+      const f = await createFolder(name);
+      await moveDeckToFolder(deck.id, f.id);
+      toast(`Movido pra "${name}".`, { kind: 'success' });
+    } catch {
+      toast('Erro ao mover.', { kind: 'error' });
+    }
+    return;
+  }
+
+  // Modal com lista de pastas.
+  const items = [
+    { id: null, name: 'Sem pasta' },
+    ...folders
+  ];
+  // Construímos lista de botões.
+  let pick = deck.folderId || null;
+  const list = el('div', { class: 'stack stack-2' });
+  function rebuild() {
+    list.innerHTML = '';
+    for (const it of items) {
+      const isActive = (it.id || null) === (pick || null);
+      list.appendChild(el('button', {
+        class: 'btn ' + (isActive ? 'btn-primary' : ''),
+        style: { justifyContent: 'flex-start', width: '100%' },
+        onClick: () => { pick = it.id; rebuild(); }
+      }, [it.name]));
+    }
+  }
+  rebuild();
+
+  const ok = await openModal({
+    title: 'Mover deck',
+    content: list,
+    actions: [
+      { label: 'Cancelar', value: false },
+      { label: 'Mover', value: true, variant: 'primary' }
+    ]
+  });
+  if (!ok) return;
+  try {
+    await moveDeckToFolder(deck.id, pick || null);
+    toast('Movido.', { kind: 'success' });
+  } catch {
+    toast('Erro ao mover.', { kind: 'error' });
+  }
 }
 
 async function onDelete(deck) {
-  const ok = await confirmModal('Deletar deck?', `"${deck.name}" e suas ${deck.cards.length} cartas serão removidos do navegador. Isso não pode ser desfeito.`);
-  if (ok) { deleteDeck(deck.id); go('/'); }
+  const ok = await confirmModal('Deletar deck?', `"${deck.name}" e suas ${deck.cards.length} cartas serão removidos. Isso não pode ser desfeito.`);
+  if (!ok) return;
+  try {
+    await deleteDeck(deck.id);
+    go('/');
+  } catch {
+    toast('Erro ao deletar.', { kind: 'error' });
+  }
 }
 
 async function openAddCards(deckId) {
@@ -128,5 +372,28 @@ async function openAddCards(deckId) {
   });
   if (!ok) return;
   const cards = parseImport(ta.value);
-  if (cards.length) addCards(deckId, cards);
+  if (!cards.length) return;
+  try {
+    await addCards(deckId, cards);
+  } catch {
+    toast('Erro ao adicionar.', { kind: 'error' });
+  }
+}
+
+async function promptText(title, label, initial = '') {
+  const input = el('input', { class: 'input', value: initial });
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+  const ok = await openModal({
+    title,
+    content: el('div', { class: 'stack stack-2' }, [
+      el('div', { class: 'label' }, [label]),
+      input
+    ]),
+    actions: [
+      { label: 'Cancelar', value: false },
+      { label: 'OK', value: true, variant: 'primary' }
+    ]
+  });
+  if (!ok) return null;
+  return input.value.trim() || null;
 }

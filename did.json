@@ -1,8 +1,9 @@
 {
   "name": "quiz",
   "port": 5034,
-  "database": false,
+  "database": true,
   "logto": false,
+  "migrations": "migrations/",
   "env": {
     "OPENAI_API_KEY": { "source": "platform", "required": true }
   }

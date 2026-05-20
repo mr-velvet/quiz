@@ -9,8 +9,9 @@ export function topbar({ showBack = false, title = '' } = {}) {
         el('span', {}, ['Flashy'])
       ]);
 
+  // Sem botão "Entrar" nesta sprint — login Logto fica pra próxima.
   const right = el('div', { class: 'row gap-2' }, [
-    el('span', { class: 'tiny muted' }, ['Anônimo · local'])
+    el('span', { class: 'tiny muted' }, ['Anônimo · este navegador'])
   ]);
 
   return el('div', { class: 'topbar' }, [
