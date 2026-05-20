@@ -3,6 +3,13 @@ node_modules
 .gitignore
 *.md
 .playwright-mcp
-*.png
 dist
-public
+qa-screenshots
+scripts
+sfx-batch.json
+
+# Public: ignora o build do vite (regerado dentro do docker),
+# mas mantém os estáticos rastreados (manifest, sw, sons, ícones).
+public/index.html
+public/assets/index-*.js
+public/assets/index-*.css
