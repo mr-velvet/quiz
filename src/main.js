@@ -3,6 +3,12 @@
 
 import { bootstrap, migrateLocalStorageIfNeeded } from './core/store.js';
 import { start } from './ui/router.js';
+import { bootStats } from './core/stats.js';
+import { preload as preloadSfx } from './core/sfx.js';
+import { mountGamificationOverlay } from './ui/gamificationOverlay.js';
+import { mountInstallPrompt } from './ui/installPrompt.js';
+import { registerSW } from './core/pwa.js';
+import { installDebugHooks } from './core/debug.js';
 
 (async () => {
   try {
@@ -16,5 +22,12 @@ import { start } from './ui/router.js';
   } catch {
     // idem
   }
+  // Gamificação: carrega stats/medalhas em paralelo (não bloqueia render).
+  bootStats().catch(() => {});
+  preloadSfx();
+  mountGamificationOverlay(document.body);
+  mountInstallPrompt(document.body);
+  registerSW();
+  installDebugHooks();
   start();
 })();

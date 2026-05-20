@@ -89,6 +89,22 @@ function paint(root, deck) {
   if (deck.records?.match) pills.appendChild(el('span', { class: 'pill' }, [`🧩 ${(deck.records.match.timeMs / 1000).toFixed(1)}s`]));
   if (deck.records?.speed) pills.appendChild(el('span', { class: 'pill' }, [`⚡ ${deck.records.speed.correct}`]));
 
+  // Pill de nível do deck — fetch async, atualiza in-place quando responder
+  const levelPill = el('span', { class: 'pill deck-level-pill' }, ['Lv —']);
+  pills.appendChild(levelPill);
+  fetch(`/api/decks/${encodeURIComponent(deck.id)}/stats`, { credentials: 'include' })
+    .then(r => r.ok ? r.json() : null)
+    .then(s => {
+      if (!s) return;
+      levelPill.innerHTML = '';
+      levelPill.appendChild(document.createTextNode(`Lv ${s.mastery_level} · ${s.mastery_title} · ${s.xp_deck} XP`));
+      const bar = el('div', { class: 'deck-level-pill-bar' }, [
+        el('div', { class: 'deck-level-pill-bar-fill', style: { width: `${Math.round((s.progress?.pct || 0) * 100)}%` } })
+      ]);
+      pills.appendChild(bar);
+    })
+    .catch(() => {});
+
   // Ações condicionais por ownership.
   const actions = isMine ? renderOwnerActions(deck) : renderVisitorActions(deck);
 

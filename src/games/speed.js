@@ -2,10 +2,12 @@ import { el, shuffle, pickRandom } from '../core/util.js';
 import { getDeck, recordCardResult, recordGameScore } from '../core/store.js';
 import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
+import { startSession } from '../core/sessionLoop.js';
+import { openSessionEndModal } from '../ui/sessionEndModal.js';
 
 const ROUND_MS = 60_000;
 
-export function renderSpeed(root, deckId) {
+export async function renderSpeed(root, deckId) {
   const deck = getDeck(deckId);
   if (!deck || deck.cards.length < 4) {
     root.appendChild(topbar({ showBack: true }));
@@ -15,6 +17,8 @@ export function renderSpeed(root, deckId) {
     ]));
     return;
   }
+
+  let session = null;
 
   let started = false;
   let startAt = 0;
@@ -46,14 +50,21 @@ export function renderSpeed(root, deckId) {
     locked = true;
     const ok = idx === correctIdx;
     recordCardResult(deckId, current.id, ok);
-    if (ok) correct++; else wrong++;
+    if (ok) {
+      correct++;
+      if (session) session.onCorrect(current.id, { cardStats: current.stats });
+    } else {
+      wrong++;
+      if (session) session.onWrong(current.id);
+    }
     renderPlay(idx);
     setTimeout(() => { if (!finished) nextRound(); }, 500);
   }
 
-  function start() {
+  async function start() {
     started = true;
     startAt = performance.now();
+    try { session = await startSession(deckId, 'speed'); } catch {}
     timerId = setInterval(() => {
       const remaining = Math.max(0, ROUND_MS - (performance.now() - startAt));
       const tEl = stage.querySelector('[data-timer]');
@@ -63,23 +74,36 @@ export function renderSpeed(root, deckId) {
     nextRound();
   }
 
-  function finish() {
+  async function finish() {
     finished = true;
     clearInterval(timerId);
     const prev = deck.records?.speed;
     const isRecord = !prev || correct > prev.correct;
     recordGameScore(deckId, 'speed', { correct, wrong });
+
+    if (!session) {
+      stage.innerHTML = '';
+      stage.appendChild(el('div', { class: 'panel result stack stack-4' }, [
+        el('div', { class: 'result-emoji' }, [isRecord ? '🏆' : '⚡']),
+        el('h2', {}, [isRecord ? 'Novo recorde!' : 'Tempo!']),
+        el('div', { class: 'score-big' }, [String(correct)]),
+        el('div', { class: 'muted' }, [`acertos em 60s · ${wrong} erros`]),
+        el('div', { class: 'row gap-2', style: { justifyContent: 'center' } }, [
+          el('button', { class: 'btn', onClick: () => go(`/deck/${deckId}`) }, ['Voltar']),
+          el('button', { class: 'btn btn-primary', onClick: replay }, ['De novo'])
+        ])
+      ]));
+      return;
+    }
+    const result = await session.finish({ cardsTotal: correct + wrong, totalDeckCards: null });
     stage.innerHTML = '';
-    stage.appendChild(el('div', { class: 'panel result stack stack-4' }, [
-      el('div', { class: 'result-emoji' }, [isRecord ? '🏆' : '⚡']),
-      el('h2', {}, [isRecord ? 'Novo recorde!' : 'Tempo!']),
-      el('div', { class: 'score-big' }, [String(correct)]),
-      el('div', { class: 'muted' }, [`acertos em 60s · ${wrong} erros`]),
-      el('div', { class: 'row gap-2', style: { justifyContent: 'center' } }, [
-        el('button', { class: 'btn', onClick: () => go(`/deck/${deckId}`) }, ['Voltar ao deck']),
-        el('button', { class: 'btn btn-primary', onClick: replay }, ['Jogar de novo'])
-      ])
-    ]));
+    stage.appendChild(el('div', { class: 'panel center muted' }, ['Speed round concluído.']));
+    openSessionEndModal({
+      summary: { ...result.summary, durationMs: ROUND_MS },
+      finishResponse: result.finishResponse,
+      onReplay: () => replay(), onBack: () => go(`/deck/${deckId}`),
+      deckId, mode: 'speed'
+    });
   }
 
   function renderStart() {
@@ -111,7 +135,7 @@ export function renderSpeed(root, deckId) {
       opts.map((opt, idx) => {
         const cls = ['mc-option'];
         if (selectedIdx !== -1) {
-          if (idx === correctIdx) cls.push('correct');
+          if (idx === correctIdx) cls.push('correct', 'flash-correct');
           else if (idx === selectedIdx) cls.push('wrong');
         }
         return el('button', {

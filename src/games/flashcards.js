@@ -4,8 +4,11 @@ import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
 import { shuffle } from '../core/util.js';
 import { playCardAudio, speakerButton, detectDeckLang, stopAudio } from '../core/audio.js';
+import { startSession } from '../core/sessionLoop.js';
+import { openSessionEndModal } from '../ui/sessionEndModal.js';
+import { floatingXp } from '../ui/xpCounter.js';
 
-export function renderFlashcards(root, deckId) {
+export async function renderFlashcards(root, deckId) {
   const deck = getDeck(deckId);
   if (!deck || deck.cards.length === 0) { go(`/deck/${deckId}`); return; }
 
@@ -14,6 +17,11 @@ export function renderFlashcards(root, deckId) {
   let i = 0;
   let flipped = false;
   let known = 0, unknown = 0;
+  const totalDeckCards = deck.cards.length;
+
+  let session = null;
+  try { session = await startSession(deckId, 'flashcards'); }
+  catch { /* sem session — modo offline */ }
 
   async function playCurrent() {
     if (i >= cards.length) return;
@@ -34,7 +42,6 @@ export function renderFlashcards(root, deckId) {
 
   function answer(correct) {
     if (!flipped) {
-      // Não dá pra responder sem ver o verso — flipa e avisa.
       flip();
       const card = stage.querySelector('.fc-card');
       if (card) {
@@ -43,8 +50,21 @@ export function renderFlashcards(root, deckId) {
       }
       return;
     }
-    recordCardResult(deckId, cards[i].id, correct);
-    if (correct) known++; else unknown++;
+    const card = cards[i];
+    recordCardResult(deckId, card.id, correct);
+    if (correct) {
+      known++;
+      if (session) session.onCorrect(card.id, { cardStats: card.stats });
+      // Floating +XP no canto do card
+      const node = stage.querySelector('.fc-card');
+      if (node) {
+        const rect = node.getBoundingClientRect();
+        floatingXp({ x: rect.right - 60, y: rect.top + 16, value: 5 });
+      }
+    } else {
+      unknown++;
+      if (session) session.onWrong(card.id);
+    }
     i++;
     flipped = false;
     rerender();
@@ -53,7 +73,8 @@ export function renderFlashcards(root, deckId) {
   function rerender() {
     stage.innerHTML = '';
     if (i >= cards.length) {
-      stage.appendChild(renderResult({ deckId, known, unknown, total: cards.length }));
+      stage.appendChild(renderLoading());
+      finishSession();
       return;
     }
     const card = cards[i];
@@ -80,6 +101,26 @@ export function renderFlashcards(root, deckId) {
     stage.appendChild(el('div', { class: 'fc-hint' }, ['Atalho: ', el('span', { class: 'kbd' }, ['espaço']), ' vira · ', el('span', { class: 'kbd' }, ['1']), ' não sei · ', el('span', { class: 'kbd' }, ['2']), ' sei · ', el('span', { class: 'kbd' }, ['S']), ' ouvir · ', el('span', { class: 'kbd' }, ['←/→']), ' navegar']));
   }
 
+  async function finishSession() {
+    if (!session) {
+      // Sem sessão: usa renderResult legado
+      stage.innerHTML = '';
+      stage.appendChild(renderFallbackResult({ deckId, known, unknown, total: cards.length }));
+      return;
+    }
+    const result = await session.finish({ cardsTotal: cards.length, totalDeckCards });
+    stage.innerHTML = '';
+    stage.appendChild(el('div', { class: 'panel center muted' }, ['Sessão concluída — abra resumo abaixo.']));
+    openSessionEndModal({
+      summary: result.summary,
+      finishResponse: result.finishResponse,
+      onReplay: () => replay(),
+      onBack: () => go(`/deck/${deckId}`),
+      deckId,
+      mode: 'flashcards'
+    });
+  }
+
   function onKey(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (i >= cards.length) return;
@@ -96,7 +137,14 @@ export function renderFlashcards(root, deckId) {
   rerender();
 }
 
-function renderResult({ deckId, known, unknown, total }) {
+function renderLoading() {
+  return el('div', { class: 'panel result stack stack-4' }, [
+    el('div', { class: 'result-emoji' }, ['⏳']),
+    el('div', { class: 'muted' }, ['Calculando XP...'])
+  ]);
+}
+
+function renderFallbackResult({ deckId, known, unknown, total }) {
   const pct = total ? Math.round((known / total) * 100) : 0;
   return el('div', { class: 'panel result stack stack-4' }, [
     el('div', { class: 'result-emoji' }, [pct >= 80 ? '🎯' : pct >= 50 ? '💪' : '📚']),

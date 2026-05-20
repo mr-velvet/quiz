@@ -1,0 +1,13 @@
+{
+  "sounds": [
+    {"prompt": "short pleasant ui correct answer pop, soft musical chime, 80ms, no melody", "output": "C:/Users/manu/ved/quiz/public/sounds/correct.wav", "duration": 1},
+    {"prompt": "short soft ui wrong answer thunk, low neutral tone, 100ms, not punitive", "output": "C:/Users/manu/ved/quiz/public/sounds/wrong.wav", "duration": 1},
+    {"prompt": "ui combo ding 5x, two notes ascending, satisfying short, 200ms", "output": "C:/Users/manu/ved/quiz/public/sounds/combo5.wav", "duration": 1},
+    {"prompt": "ui combo 10 tada chime, three notes ascending bell, 300ms", "output": "C:/Users/manu/ved/quiz/public/sounds/combo10.wav", "duration": 1.5},
+    {"prompt": "ui combo 20 sustained musical sweep, warm pad, 800ms, on fire", "output": "C:/Users/manu/ved/quiz/public/sounds/combo20.wav", "duration": 2},
+    {"prompt": "level up musical ascending sweep, 4 notes glissando, bright bell, 600ms", "output": "C:/Users/manu/ved/quiz/public/sounds/level-up.wav", "duration": 1.5},
+    {"prompt": "medal achievement chime, distinct triumphant short bell sequence, 500ms", "output": "C:/Users/manu/ved/quiz/public/sounds/medal.wav", "duration": 1.5},
+    {"prompt": "new record celebration short brass fanfare, 1 second", "output": "C:/Users/manu/ved/quiz/public/sounds/record.wav", "duration": 2},
+    {"prompt": "session finish satisfying chord, soft warm pad resolution, 800ms", "output": "C:/Users/manu/ved/quiz/public/sounds/finish.wav", "duration": 2}
+  ]
+}

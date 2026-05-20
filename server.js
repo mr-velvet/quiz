@@ -9,6 +9,9 @@ const decksRouter = require('./server/routes/decks');
 const cardsRouter = require('./server/routes/cards');
 const foldersRouter = require('./server/routes/folders');
 const exploreRouter = require('./server/routes/explore');
+const sessionsRouter = require('./server/routes/sessions');
+const statsRouter = require('./server/routes/stats');
+const devRouter = require('./server/routes/dev');
 
 const app = express();
 const PORT = process.env.PORT || 5034;
@@ -38,6 +41,10 @@ app.use('/api/decks', decksRouter);
 app.use('/api/cards', cardsRouter);
 app.use('/api/folders', foldersRouter);
 app.use('/api/explore', exploreRouter);
+app.use('/api/sessions', sessionsRouter);
+// statsRouter expõe /me/stats, /me/medals, /me/decks-top, /decks/:id/stats
+app.use('/api', statsRouter);
+app.use('/api/dev', devRouter);
 
 app.use(express.static(PUBLIC_DIR, {
   maxAge: '1h',
@@ -51,4 +58,8 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`quiz on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`quiz on port ${PORT}`);
+  // Cleanup periódico de sessions pending > 2h.
+  if (sessionsRouter.startCleanupLoop) sessionsRouter.startCleanupLoop();
+});

@@ -1,8 +1,13 @@
 node_modules
 dist
-public
 .playwright-mcp
-*.png
 .env
 .env.local
 .DS_Store
+qa-screenshots/
+
+# public/ é parcialmente gerado pelo vite build no Docker, mas alguns arquivos
+# estáticos (manifest, sw, ícones, sons) ficam rastreados pra entrar no docker context.
+public/index.html
+public/assets/index-*.js
+public/assets/index-*.css

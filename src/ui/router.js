@@ -11,6 +11,7 @@ import { renderHome } from './home.js';
 import { renderDeck } from './deck.js';
 import { renderExplore } from './explore.js';
 import { renderFolders } from './folders.js';
+import { renderMe } from './me.js';
 import { renderFlashcards } from '../games/flashcards.js';
 import { renderMultipleChoice } from '../games/multiple-choice.js';
 import { renderWrite } from '../games/write.js';
@@ -79,6 +80,11 @@ function render() {
 
   if (parts[0] === 'pastas') {
     renderFolders(app);
+    return;
+  }
+
+  if (parts[0] === 'eu') {
+    renderMe(app);
     return;
   }
 

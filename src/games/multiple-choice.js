@@ -3,8 +3,11 @@ import { getDeck, recordCardResult } from '../core/store.js';
 import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
 import { playCardAudio, speakerButton, detectDeckLang, stopAudio } from '../core/audio.js';
+import { startSession } from '../core/sessionLoop.js';
+import { openSessionEndModal } from '../ui/sessionEndModal.js';
+import { floatingXp } from '../ui/xpCounter.js';
 
-export function renderMultipleChoice(root, deckId) {
+export async function renderMultipleChoice(root, deckId) {
   const deck = getDeck(deckId);
   if (!deck || deck.cards.length < 4) {
     root.appendChild(topbar({ showBack: true }));
@@ -20,6 +23,10 @@ export function renderMultipleChoice(root, deckId) {
   let i = 0, correct = 0, wrong = 0, locked = false;
   let currentOptions = [];
   let currentCorrectIdx = -1;
+  const totalDeckCards = deck.cards.length;
+
+  let session = null;
+  try { session = await startSession(deckId, 'multiple'); } catch {}
 
   async function playPrompt() {
     if (i >= cards.length) return;
@@ -47,22 +54,46 @@ export function renderMultipleChoice(root, deckId) {
     const isCorrect = idx === currentCorrectIdx;
     const card = cards[i];
     recordCardResult(deckId, card.id, isCorrect);
-    if (isCorrect) correct++; else wrong++;
+    if (isCorrect) {
+      correct++;
+      if (session) session.onCorrect(card.id, { cardStats: card.stats });
+      const optNode = stage.querySelectorAll('.mc-option')[idx];
+      if (optNode) {
+        const rect = optNode.getBoundingClientRect();
+        floatingXp({ x: rect.right - 50, y: rect.top + 8, value: 10 });
+      }
+    } else {
+      wrong++;
+      if (session) session.onWrong(card.id);
+    }
     rerender(idx);
     setTimeout(() => {
       i++;
       locked = false;
-      if (i < cards.length) buildRound();
-      rerender();
+      if (i < cards.length) { buildRound(); rerender(); }
+      else finishSession();
     }, 850);
+  }
+
+  async function finishSession() {
+    if (!session) {
+      stage.innerHTML = '';
+      stage.appendChild(renderFallback({ deckId, correct, total: cards.length }));
+      return;
+    }
+    const result = await session.finish({ cardsTotal: cards.length, totalDeckCards });
+    stage.innerHTML = '';
+    stage.appendChild(el('div', { class: 'panel center muted' }, ['Sessão concluída.']));
+    openSessionEndModal({
+      summary: result.summary, finishResponse: result.finishResponse,
+      onReplay: () => replay(), onBack: () => go(`/deck/${deckId}`),
+      deckId, mode: 'multiple'
+    });
   }
 
   function rerender(selectedIdx = -1) {
     stage.innerHTML = '';
-    if (i >= cards.length) {
-      stage.appendChild(renderResult({ deckId, correct, wrong, total: cards.length }));
-      return;
-    }
+    if (i >= cards.length) return; // já iniciou finishSession
     const card = cards[i];
     stage.appendChild(el('div', { class: 'row-between' }, [
       el('div', { class: 'fc-counter' }, [`${i + 1} / ${cards.length}`]),
@@ -80,7 +111,7 @@ export function renderMultipleChoice(root, deckId) {
       currentOptions.map((opt, idx) => {
         const cls = ['mc-option'];
         if (selectedIdx !== -1) {
-          if (idx === currentCorrectIdx) cls.push('correct');
+          if (idx === currentCorrectIdx) cls.push('correct', 'flash-correct');
           else if (idx === selectedIdx) cls.push('wrong');
         }
         return el('button', {
@@ -110,16 +141,16 @@ export function renderMultipleChoice(root, deckId) {
   rerender();
 }
 
-function renderResult({ deckId, correct, wrong, total }) {
+function renderFallback({ deckId, correct, total }) {
   const pct = total ? Math.round((correct / total) * 100) : 0;
   return el('div', { class: 'panel result stack stack-4' }, [
-    el('div', { class: 'result-emoji' }, [pct >= 80 ? '🎯' : pct >= 50 ? '💪' : '📚']),
+    el('div', { class: 'result-emoji' }, [pct >= 80 ? '🎯' : '💪']),
     el('h2', {}, ['Resultado']),
     el('div', { class: 'score-big' }, [`${pct}%`]),
-    el('div', { class: 'muted' }, [`${correct} de ${total} acertos`]),
+    el('div', { class: 'muted' }, [`${correct} de ${total}`]),
     el('div', { class: 'row gap-2', style: { justifyContent: 'center' } }, [
-      el('button', { class: 'btn', onClick: () => go(`/deck/${deckId}`) }, ['Voltar ao deck']),
-      el('button', { class: 'btn btn-primary', onClick: replay }, ['Jogar de novo'])
+      el('button', { class: 'btn', onClick: () => go(`/deck/${deckId}`) }, ['Voltar']),
+      el('button', { class: 'btn btn-primary', onClick: replay }, ['De novo'])
     ])
   ]);
 }

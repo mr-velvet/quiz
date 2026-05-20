@@ -2,15 +2,14 @@ import { el, shuffle, fmtTime } from '../core/util.js';
 import { getDeck, recordGameScore } from '../core/store.js';
 import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
+import { startSession } from '../core/sessionLoop.js';
+import { openSessionEndModal } from '../ui/sessionEndModal.js';
 
-// Match grid — foco do user.
-// 6 pares por rodada (12 tiles). Se deck tem menos de 6 cartas, usa o que tem.
-// Clica par: se casar, somem com animação. Se não casar, shake.
-// Timer cronometra do primeiro clique até zerar.
+// Match grid. 6 pares por rodada (12 tiles).
 
 const PAIRS_PER_ROUND = 6;
 
-export function renderMatch(root, deckId) {
+export async function renderMatch(root, deckId) {
   const deck = getDeck(deckId);
   if (!deck || deck.cards.length < 2) {
     root.appendChild(topbar({ showBack: true }));
@@ -23,8 +22,8 @@ export function renderMatch(root, deckId) {
 
   const n = Math.min(PAIRS_PER_ROUND, deck.cards.length);
   const chosen = shuffle(deck.cards).slice(0, n);
+  const cardById = new Map(deck.cards.map(c => [c.id, c]));
 
-  // Tiles: cada par vira 2 tiles (front e back), com pairId compartilhado.
   let tiles = [];
   for (const c of chosen) {
     tiles.push({ id: c.id + ':f', pairId: c.id, label: c.front, matched: false });
@@ -32,7 +31,10 @@ export function renderMatch(root, deckId) {
   }
   tiles = shuffle(tiles);
 
-  let selected = null; // tile object
+  let session = null;
+  try { session = await startSession(deckId, 'match'); } catch {}
+
+  let selected = null;
   let startTime = 0;
   let elapsed = 0;
   let timerId = null;
@@ -66,8 +68,27 @@ export function renderMatch(root, deckId) {
       const prev = deck.records?.match;
       const isRecord = !prev || finalTime < prev.timeMs;
       recordGameScore(deckId, 'match', { timeMs: Math.round(finalTime), mistakes });
-      setTimeout(() => rerenderResult(finalTime, isRecord), 400);
+      finishSession({ finalTime, isRecord });
     }
+  }
+
+  async function finishSession({ finalTime, isRecord }) {
+    if (!session) {
+      rerenderResult(finalTime, isRecord);
+      return;
+    }
+    const result = await session.finish({
+      cardsTotal: n,
+      totalDeckCards: null
+    });
+    stage.innerHTML = '';
+    stage.appendChild(el('div', { class: 'panel center muted' }, ['Sessão concluída.']));
+    openSessionEndModal({
+      summary: { ...result.summary, durationMs: Math.round(finalTime) },
+      finishResponse: result.finishResponse,
+      onReplay: () => replay(), onBack: () => go(`/deck/${deckId}`),
+      deckId, mode: 'match'
+    });
   }
 
   function onTileClick(tile, node) {
@@ -80,19 +101,19 @@ export function renderMatch(root, deckId) {
       return;
     }
     if (selected.id === tile.id) {
-      // clicou mesmo tile, deseleciona
       node.classList.remove('selected');
       selected = null;
       return;
     }
-    // Tem 2 tiles selecionados
     const prevNode = stage.querySelector(`[data-tile-id="${CSS.escape(selected.id)}"]`);
     if (selected.pairId === tile.pairId) {
-      // par!
       tile.matched = true;
       selected.matched = true;
       node.classList.add('flash-correct');
       prevNode?.classList.add('flash-correct');
+      // Sessão: cada par casado = 1 "acerto" do card pairId
+      const card = cardById.get(tile.pairId);
+      if (session) session.onCorrect(tile.pairId, { cardStats: card ? card.stats : null });
       setTimeout(() => {
         node.classList.add('matched');
         prevNode?.classList.add('matched');
@@ -101,6 +122,8 @@ export function renderMatch(root, deckId) {
       checkComplete();
     } else {
       mistakes++;
+      // erro: registra no card do tile que estava antes
+      if (session) session.onWrong(selected.pairId);
       node.classList.add('flash-wrong');
       prevNode?.classList.add('flash-wrong');
       const sel = selected;
@@ -113,7 +136,6 @@ export function renderMatch(root, deckId) {
     }
   }
 
-  // Atalhos por tecla, posicionais (grid 4 colunas × 3 linhas).
   const KEYS = ['1','2','3','4','q','w','e','r','a','s','d','f'];
 
   function rerenderGrid() {
