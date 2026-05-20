@@ -64,6 +64,8 @@ function render() {
   const { parts, query } = parseHash();
   const app = root();
   app.innerHTML = '';
+  // Invalida qualquer token de render assíncrono pendente (ver deck.js).
+  app.__renderToken = null;
 
   if (parts.length === 0) {
     renderHome(app, { folderFilter: query.folder || null });

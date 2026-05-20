@@ -24,15 +24,22 @@ const MODES = [
 ];
 
 export function renderDeck(root, deckId) {
-  // Render assíncrono: busca do backend, atualiza cache.
-  // Mostra topbar e skeleton enquanto carrega — sem flash de "404".
+  // Render assíncrono. Marca o root com um token; se o user navegar pra
+  // outra rota antes do fetch resolver, o router troca o conteúdo do root
+  // e o token muda — então ignoramos o paint tardio (senão o detalhe
+  // sobrescreve o modo de jogo que acabou de carregar).
+  const token = Symbol('renderDeck');
+  root.__renderToken = token;
+  function isStale() { return root.__renderToken !== token; }
+
   const cached = getDeck(deckId);
   if (cached && cached.cards && cached.cards.length > 0) {
     paint(root, cached);
   } else {
     paintLoading(root);
   }
-  fetchDeck(deckId).then(d => paint(root, d)).catch(err => {
+  fetchDeck(deckId).then(d => { if (!isStale()) paint(root, d); }).catch(err => {
+    if (isStale()) return;
     if (err && err.status === 404) {
       go('/');
       toast('Esse deck não existe mais.', { kind: 'error' });
