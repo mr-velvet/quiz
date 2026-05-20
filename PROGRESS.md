@@ -1,214 +1,112 @@
 # Flashy (quiz) — Progresso
 
-Última atualização: 2026-05-19
+Última atualização: 2026-05-20 (sprint ownership entregue)
 
 > **Antes de qualquer trabalho neste repo, ler `CONCEPTS.md`** — visão de produto,
 > princípios e decisões estratégicas. Este arquivo aqui é o estado operacional.
+>
+> Specs detalhadas da sprint atual em `specs/`:
+> - `DECISIONS-sprint-ownership.md` — decisões batidas
+> - `PRODUCT-SPEC-ownership.md` — visão de produto
+> - `UX-SPEC-ownership.md` — desenho visual
 
 ## Produção
 
 - **URL:** https://quiz.did.lu
 - **Repo:** https://github.com/mr-velvet/quiz (branch `master`)
 - **Porta interna:** 5034
-- **Container:** Node 20 + Express servindo build do Vite em `public/`
+- **Container:** Node 20 + Express + Postgres compartilhado da plataforma did.lu
+- **Banco:** `quiz` no postgres da did.lu (criado via `CREATE DATABASE quiz` — `new-app.sh` não roda em app pré-existente que mudou de `database: false` pra `true`)
 - **Health:** `GET /api/health` → `{"status":"ok","service":"quiz"}`
-- **TTS:** `POST /api/tts` `{text, lang?}` → URL no GCS (cache compartilhado)
 - **Deploy:** `cd ~/ved/devops-workflow-2026 && .\scripts\did.ps1 deploy quiz`
 - **Pasta local:** `~/ved/quiz/`
 
 ### Env vars necessárias em produção
 - `OPENAI_API_KEY` — pro TTS (tts-1).
-- `GCS_BUCKET` — default `didlu-imagestore` (não setar se for o padrão).
-- Token de upload GCS: via metadata server da VM GCP (Application Default Credentials).
-  Em dev local: `gcloud auth print-access-token` → `GCP_ACCESS_TOKEN` env.
-
-> Bug conhecido: `add-env-vars.sh` da plataforma did.lu duplicou `PORT` no
-> docker-compose.yml no primeiro deploy. Foi corrigido manualmente. Verificar no
-> próximo deploy se persiste.
+- `DATABASE_URL` — injetada pela plataforma.
+- `GCS_BUCKET` — default `didlu-imagestore`.
+- Token de upload GCS: via metadata server da VM GCP.
 
 ## Estado atual — implementado
 
-### MVP
+### MVP base
 - Home + criação de deck via texto (TAB/`;`/` - `/`,` auto-detecta).
 - Modal custom (sem `confirm()`/`alert()`).
-- Hash router com cleanup registry + `replay()`.
-- 2 decks seed (capitais SA, vocabulário en↔pt).
+- Hash router com cleanup registry + invalidação de render assíncrono via token.
 - Atalhos consistentes nos 5 modos.
 - Mobile responsivo (breakpoints 600/480).
-- Persistência via `localStorage` chave `flashy:v1`.
+- 5 modos de jogo (flashcards, MC, escrever, match, speed).
 
-### Modos de jogo (5)
-1. ✓ Flashcards clássico — atalhos `espaço/1/2/←→/S`
-2. ✓ Múltipla escolha — `1-4/S`
-3. ✓ Escrever (typo tolerante Levenshtein) — `Enter/Alt+S`
-4. ✓ Match grid 4×3 — `1-4/Q-R/A-F`
-5. ✓ Speed round 60s — `Enter/1-4`
+### TTS (sprint anterior)
+- Backend `server/tts.js`: OpenAI `tts-1`, cache GCS.
+- URL pública via `st.did.lu/quiz/tts/<hash>.mp3`.
+- Hash determinístico = `sha256(model|voice|lang|text).slice(0,24)`.
+- Cache global entre usuários.
 
-### TTS (recém-entregue)
-- Backend `server/tts.js`: OpenAI `tts-1`, cache GCS `didlu-imagestore/quiz/tts/<hash>.mp3`.
-- URL pública via `st.did.lu/quiz/tts/<hash>.mp3` (DNS curto).
-- Hash determinístico = `sha256(model|voice|lang|text).slice(0,24)`. Cache global
-  entre usuários (decks compartilham mp3 quando texto é igual).
-- Detecção de idioma no client (`detectLang`/`detectDeckLang`) com hint de acentos +
-  palavras frequentes. Escolhe voz: alloy/nova/shimmer/onyx/echo.
-- Botão speaker em: lista de cartas do deck (front + back), flashcards (na carta),
-  MC (ao lado do prompt), Write (ao lado do prompt + resposta após resultado).
-- Atalho `S` em flashcards/MC. Em Write é `Alt+S` (pra não bloquear digitação).
-- Match e Speed **não têm áudio por design** — Match colide com tecla S como tile,
-  Speed é modo adrenalina onde áudio interromperia o flow.
+### Sprint ownership/visibility/folders/Explore (2026-05-20) ✅
+- **Postgres em produção.** Schema com users (anônimos/logados/system), folders, decks, cards, reports. Migrations versionadas em `migrations/`.
+- **Identidade anônima** via cookie `flashy_aid` (UUID v4, max-age 10 anos, SameSite=Lax). Espelhado em `localStorage:flashy:aid` como backup.
+- **Ownership:** todo deck pertence a um user. Edit/delete só dono. Anônimo pode criar/publicar (regra relaxada — uso doméstico por enquanto).
+- **Visibilidade público/privado:** default público. Toggle no modal criar deck. Deck privado retorna 404 pra não-dono (não vaza existência).
+- **Pastas:** pessoais, label-only. Um deck em 0 ou 1 pasta. Deletar pasta não deleta decks.
+- **Tela Explorar:** decks públicos com busca + ordenação (Populares/Recentes), paginação 20/página.
+- **Clone:** qualquer um clona deck público, vira deck novo do clonador. Atribuição "baseado em X" por 30 dias.
+- **Rate limit:** 20 decks/dia por anônimo, 100/dia logado. Máximo 2000 cards/deck.
+- **Migração automática:** primeiro load lê `localStorage:flashy:v1`, sobe decks pro backend, preserva `card.audio`. Marca `flashy:migrated_v1`. Backup local mantido por 1 release.
+- **Decks seed** (Capitais SA, Vocabulário) agora são públicos no banco com owner `system`. Aparecem em Explorar, não em "Meus".
+- **Components UI novos:** icons.js, toggle.js, dropdown.js, tabs.js, toast.js, skeleton.js.
 
-### Testado via Playwright (versões TTS)
-- TTS gera mp3 e cacheia no GCS ✓
-- Segunda chamada com mesmo texto: `cached: true`, instantâneo ✓
-- URL pública st.did.lu retorna 200 com `audio/mpeg` ✓
-- Botões speaker visíveis em todos os contextos ✓
-- Atalho `S` em flashcards dispara request ✓
+### Bugs encontrados e corrigidos
+- ✅ Modal-backdrop preso bloqueava cliques após navegação. Fix: `closeAllModals()` no router antes de cada render + modal fecha em `hashchange`.
+- ✅ `cardCount` zerado na home — ternário caía em `cards.length` (array vazio = 0). Fix: usa `cards.length || cardCount || 0`.
+- ✅ `flashy_aid` não espelhava em localStorage. Fix: `bootstrap()` grava após `api.me()`.
+- ✅ Render assíncrono do detalhe sobrescrevia tela do modo de jogo. Fix: token de render no `root`.
+- ✅ **Loop infinito no detalhe do deck:** `fetchDeck` emitia `flashy:change` → onChange disparava render → render chamava fetchDeck → ... Fix: fetchDeck só emite se a `myDeckOrder` muda de fato.
 
----
-
-## Sprint atual: Gamificação (aguardando OK do user pra começar)
-
-**Status:** plano desenhado. Implementação **não** começada. User pediu pra
-documentar e esperar.
-
-### Princípios da gamificação (de `CONCEPTS.md`)
-1. Recompensar velocidade E precisão.
-2. Combo/streak é o coração.
-3. XP/nível é progressão lenta — não inflar.
-4. Não punir erro brutalmente.
-5. Recordes locais primeiro.
-6. Lembrete diário opcional.
-
-### Sistema de pontuação (proposta)
-
-Cada acerto rende:
-```
-pontos = base × multiplicadorCombo + bônusTempo
-```
-
-**Base por modo** (reflete dificuldade intrínseca):
-| Modo | Base |
-|------|------|
-| Flashcards | 10 (julgamento próprio é fácil) |
-| MC | 20 |
-| Match | 30 (por par) |
-| Speed | 15 (já tem pressão de tempo) |
-| Escrever | 40 (mais difícil) |
-
-**Bônus tempo** (encoraja velocidade sem matar quem pensa):
-- MC/Speed: resposta em <1s → +20; <2s → +10; <4s → 0.
-- Escrever: <3s → +25; <6s → +15; <12s → 0.
-- Match (por par): <2s → +20; <5s → +10; depois 0.
-- Flashcards: sem bônus tempo (modo reflexivo).
-
-**Combo/streak**:
-- Acerto: `multiplicadorCombo = 1 + min(streak × 0.1, 2)` → cap 3x em 20 streaks.
-- Erro: reseta streak pra 0. Não tira pontos.
-- Mostrar visualmente: `2x`, `5x — combo!`, `10x — em chamas 🔥`, `20x — perfeito ⚡`.
-
-**XP** = soma de todos os pontos. Persiste por device.
-- Níveis: 1k, 2.5k, 5k, 10k, 20k, 40k, 75k, 130k, 220k, 400k... (curva ~×1.8).
-- Subir de nível: animação cheia, som curto, badge no topbar.
-
-### Medalhas (10 iniciais)
-1. **Primeira sessão** — completou 1 modo.
-2. **Estudioso** — 7 dias com pelo menos 1 sessão.
-3. **Maratonista** — 30 dias com pelo menos 1 sessão.
-4. **Match relâmpago** — match com 6 pares em <15s.
-5. **Sem erros** — sessão de 12+ cards sem errar.
-6. **Combo épico** — 20+ acertos seguidos em qualquer modo.
-7. **Velocista** — 30+ acertos em Speed round.
-8. **Polyglot** — usou áudio em 4+ idiomas diferentes.
-9. **Criador** — criou 5 decks.
-10. **Veterano** — alcançou nível 10.
-
-### Streak diário
-- Track de dias consecutivos com pelo menos 1 sessão completa.
-- Topbar mostra `🔥 3 dias` se streak ativo.
-- Notificação opcional (Notification API do browser):
-  - Pedir permissão só depois de 3 dias de uso (senão é spam).
-  - Lembrete único às 19h se ainda não estudou hoje.
-
-### Sons
-- Acerto: tom curto leve (não bater no padrão "achievement mobile").
-- Combo milestone (5x/10x/20x): som mais cheio, riser curto.
-- Erro: sem som (não punir).
-- Geração: usar `sfx-gen` do toolbelt OU sintetizar via `AudioContext` direto.
-- Mute toggle no topbar (persistir em localStorage).
-
-### Onde isso vive no código
-- **Novo:** `src/core/score.js` — fórmulas, persistência de XP/nível/medalhas.
-- **Novo:** `src/core/sfx.js` — sons curtos.
-- **Modificar:** cada modo de jogo (registrar acerto/erro → score).
-- **Modificar:** topbar.js — mostrar streak, nível, XP da sessão.
-- **Novo:** `src/ui/profile.js` — telinha de perfil com medalhas, histórico, streak.
-
-### Schema de persistência (extensão de `flashy:v1`)
-```js
-{
-  decks: { ... },
-  order: [...],
-  profile: {                       // NOVO
-    xp: 0,
-    level: 1,
-    streak: { days: 0, lastSessionAt: 0 },
-    medals: [],                    // ids das conquistadas
-    counters: { sessions, decksCreated, langsUsed: [] },
-    settings: { mute: false, notifications: 'unasked' }
-  }
-}
-```
-
-### Ordem de implementação proposta
-1. `score.js` + persistência básica (XP, sem UI).
-2. Integração em flashcards/MC/Write/Match/Speed (registrar pontos).
-3. UI de combo durante o jogo (numerinho subindo, milestone visual).
-4. Topbar: XP da sessão + nível.
-5. Tela de resultado pós-jogo: total de pontos, combo máximo, novo nível?
-6. Streak diário + topbar fire icon.
-7. Medalhas (10 iniciais) + página de perfil.
-8. Sons (após visual estar 100% — sons polidos não maquilam UX ruim).
-9. Notification API (último — depende de prova de hábito).
+### QA E2E validado (Playwright)
+- Criar deck → fechar browser → reabrir → deck persiste (motivação original da sprint). ✅
+- Usuário B (cookie limpo) vê deck público de A em Explorar, não vê privado. ✅
+- URL direta de privado de outro → 404. ✅
+- Duplicar deck público funciona, vira do clonador. ✅
+- Pastas: criar/mover/filtrar/deletar (decks voltam pra "Sem pasta"). ✅
+- Toggle público→privado dinâmico funciona, sai do Explorar. ✅
+- Modos de jogo abrem corretamente após click. ✅
+- Migração de localStorage v1 funciona. ✅
+- Rate limit (2001 cards) retorna 400. ✅
 
 ---
 
-## Backlog pós-gamificação
+## Sprint atual: estabilizada. Próximas opções
 
-### Alta
-- Modo Escrever bidirecional.
-- Continuar de onde parou (não perde sessão ao sair).
-- Match difícil (10-12 pares).
+### 1. Polimento / observabilidade (1-2 dias)
+- Reports admin UI (endpoint existe, sem interface).
+- Limpar `flashy:v1` após N dias da migração.
+- Logging estruturado das mutations no backend.
+- Métricas básicas (decks criados/dia, sessões).
 
-### Média
-- Renomear `records` → `localRecords` antes de sync.
-- `aria-live` em feedbacks de Write/MC.
-- Busca de cartas no deck quando >30.
-- Edição manual de card individual.
+### 2. Login Logto (1-2 dias)
+- Setar `logto: true` no did.json.
+- Fluxo de claim do anonymous_id pro user logado.
+- Tela de perfil mínima.
+- Trocar "por anônimo" em decks públicos por `@nome` real.
 
-### Baixa / depois
-- SRS (Anki-like).
-- Login (Logto did.lu) + claim de localStorage.
-- Sync entre devices.
-- Pastas (Folder).
-- Compartilhar deck por link público.
-- Validação de conteúdo (anti-spam).
-- Ranking global.
+### 3. Gamificação (planejada em CONCEPTS.md, plano em PROGRESS antigo)
+- XP, combo, medalhas, streak diário, sons.
+- Sprint maior (3-5 dias).
+
+### 4. Modo escrever bidirecional, edição manual de card, busca em deck grande
+- Backlog menor; aproveita pra polir UX existente.
 
 ---
 
 ## Riscos / pontos de atenção
 
-- **OpenAI key:** chave única do toolbelt do user (conta pessoal). Custo TTS:
-  ~$0.015/1k chars. Cache global no GCS amortiza muito — 1 card popular gera só
-  uma vez pra todos os usuários.
-- **GCS upload via metadata server:** funciona na VM did.lu nativamente. Em dev
-  local, precisa `gcloud auth print-access-token` → `GCP_ACCESS_TOKEN` env.
-- **Migração localStorage → sync:** chave já versionada (`flashy:v1`).
-- **IDs:** `Math.random + Date.now`. Trocar pra UUID quando sync entrar.
-- **`records` local:** renomear pra `localRecords`.
-- **TTS sem rate limit no backend:** se virar problema, adicionar por IP.
-- **Audio cache no card:** se OpenAI muda voz ou bucket some, URLs guardadas
-  apontam pra 404. Bom ter retry que regenera nesse caso.
+- **Banco compartilhado:** se uma migration ruim corromper algo, afeta só DB `quiz`. Mas atenção em qualquer drop/alter.
+- **Soft delete sem UI de restore:** 30 dias retenção, mas sem caminho na UI. Quem deletou por engano precisa pedir.
+- **Anonymous_id em 2 browsers:** continua sendo 2 usuários distintos. Resolve com login (claim).
+- **OpenAI key:** chave única do toolbelt (uso doméstico). Cache GCS amortiza.
+- **`removed_by_admin`:** backend respeita mas UI pra admin marcar não existe. Hoje seria via SQL direto.
+- **Sem login = sem claim:** decks anônimos só existem no browser onde foram criados. Aceito até Logto entrar.
 
 ---
 
@@ -216,13 +114,54 @@ pontos = base × multiplicadorCombo + bônusTempo
 
 ```bash
 npm install
-npm run dev    # vite, sem backend
+npm run dev    # vite, sem backend (só UI, sem persistência)
 ```
 
-Pra testar TTS local (precisa backend):
-```bash
-npx vite build && rm -rf public && mv dist public
-export OPENAI_API_KEY=$(node -e "console.log(JSON.parse(require('fs').readFileSync('C:/Users/manu/dev/universal-toolbelt/.api-keys.json')).openai.api_key)")
-export GCP_ACCESS_TOKEN=$(gcloud auth print-access-token | tr -d '\r\n')
-PORT=5034 node server.js
+Pra testar com backend local, precisa Postgres rodando + env vars. Recomendação: testar mudanças direto em staging via deploy (`did.ps1 deploy quiz` é rápido — 30s).
+
+---
+
+## Arquivos-chave
+
+```
+quiz/
+├── did.json               # database: true, migrations: migrations/
+├── Dockerfile
+├── server.js              # Express, monta rotas
+├── server/
+│   ├── auth.js            # middleware attachUser (cookie flashy_aid)
+│   ├── db.js              # pg pool
+│   ├── tts.js             # TTS endpoint (sprint anterior)
+│   └── routes/
+│       ├── me.js
+│       ├── decks.js
+│       ├── cards.js
+│       ├── folders.js
+│       └── explore.js
+├── migrations/
+│   ├── 001_init.sql       # schema completo
+│   └── 002_seeds.sql      # user system + 2 decks seed públicos
+├── src/
+│   ├── main.js            # boot: migrate → bootstrap → start
+│   ├── core/
+│   │   ├── api.js         # client REST
+│   │   ├── store.js       # cache em memória + migrações
+│   │   ├── audio.js       # TTS client
+│   │   └── util.js        # el(), helpers
+│   ├── ui/
+│   │   ├── router.js
+│   │   ├── home.js        # tabs + chips de pasta + grid
+│   │   ├── deck.js        # detalhe com ações condicionais
+│   │   ├── explore.js     # tela nova
+│   │   ├── folders.js     # tela nova
+│   │   ├── topbar.js
+│   │   ├── modal.js       # closeAllModals
+│   │   ├── icons.js       # SVG inline
+│   │   ├── toggle.js
+│   │   ├── dropdown.js
+│   │   ├── tabs.js
+│   │   ├── toast.js
+│   │   └── skeleton.js
+│   └── games/             # 5 modos (inalterados)
+└── specs/                 # decisões + product + ux desta sprint
 ```
