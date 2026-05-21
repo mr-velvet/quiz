@@ -1893,6 +1893,36 @@ a:hover { text-decoration: underline; }
   padding: 3px 10px !important;
   font-size: 12px !important;
 }
+.import-col-preview {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: var(--bg-base);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+.import-col-preview-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 120px;
+}
+.import-col-preview-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+}
+.import-col-preview-val {
+  font-size: 13px;
+  font-family: 'Fraunces', Georgia, serif;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .write-feedback-hint {
   margin-top: 4px;
 }

@@ -59,7 +59,12 @@ export function importPicker({ placeholder, initialText = '' } = {}) {
   });
   if (initialText) textarea.value = initialText;
 
-  function buildColSelector(colCount) {
+  function truncate(s, n) {
+    const t = String(s == null ? '' : s);
+    return t.length > n ? t.slice(0, n - 1) + '…' : t;
+  }
+
+  function buildColSelector(colCount, sampleRow) {
     colSelector.innerHTML = '';
     if (colCount < 3) {
       colSelector.style.display = 'none';
@@ -69,6 +74,20 @@ export function importPicker({ placeholder, initialText = '' } = {}) {
     colSelector.appendChild(el('div', { class: 'tiny muted', style: { marginBottom: '6px' } }, [
       `Detectei ${colCount} colunas. Escolha quais usar:`
     ]));
+
+    // Preview do conteúdo de cada coluna (1ª linha colada). Ajuda o user
+    // a identificar qual coluna é qual sem precisar contar mentalmente.
+    if (sampleRow && sampleRow.length) {
+      const previewRow = el('div', { class: 'import-col-preview' });
+      for (let i = 0; i < colCount; i++) {
+        const val = (sampleRow[i] || '').trim();
+        previewRow.appendChild(el('div', { class: 'import-col-preview-cell' }, [
+          el('span', { class: 'import-col-preview-label tiny muted' }, [`Col ${i + 1}`]),
+          el('span', { class: 'import-col-preview-val' }, [truncate(val, 40) || '—'])
+        ]));
+      }
+      colSelector.appendChild(previewRow);
+    }
 
     const headerRow = el('div', { class: 'import-col-row' });
     headerRow.appendChild(el('span', { class: 'import-col-label tiny' }, ['Frente']));
@@ -81,7 +100,7 @@ export function importPicker({ placeholder, initialText = '' } = {}) {
           if (backCol === i) backCol = frontCol;
           frontCol = i;
           userTouchedCols = true;
-          buildColSelector(colCount);
+          buildColSelector(colCount, sampleRow);
           recompute();
         }
       }, [`Col ${i + 1}`]);
@@ -100,7 +119,7 @@ export function importPicker({ placeholder, initialText = '' } = {}) {
           if (frontCol === i) frontCol = backCol;
           backCol = i;
           userTouchedCols = true;
-          buildColSelector(colCount);
+          buildColSelector(colCount, sampleRow);
           recompute();
         }
       }, [`Col ${i + 1}`]);
@@ -134,7 +153,10 @@ export function importPicker({ placeholder, initialText = '' } = {}) {
     // Quando cc < 2, mantemos os valores anteriores (válidos) — não há
     // seleção visual exposta, então não há divergência percebida.
 
-    buildColSelector(cc);
+    // Primeira linha do texto colado (a que o user enxerga no topo do
+    // textarea) — usada como amostra de conteúdo por coluna.
+    const sampleRow = table.rows.length ? table.rows[0] : null;
+    buildColSelector(cc, sampleRow);
 
     const cards = parseImport(text, { sep, frontCol, backCol });
     const n = cards.length;
