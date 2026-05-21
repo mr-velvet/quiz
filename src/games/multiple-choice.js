@@ -6,6 +6,8 @@ import { playCardAudio, speakerButton, detectDeckLang, stopAudio, prefetchCardAu
 import { startSession } from '../core/sessionLoop.js';
 import { openSessionEndModal } from '../ui/sessionEndModal.js';
 import { floatingXp } from '../ui/xpCounter.js';
+import { revisionButton } from '../ui/revisionButton.js';
+import { ensureDeckList } from '../core/reviewList.js';
 
 export async function renderMultipleChoice(root, deckId) {
   const deck = getDeck(deckId);
@@ -23,11 +25,15 @@ export async function renderMultipleChoice(root, deckId) {
   let i = 0, correct = 0, wrong = 0, locked = false;
   let currentOptions = [];
   let currentCorrectIdx = -1;
+  let currentRevBtn = null;
   const totalDeckCards = deck.cards.length;
   const errors = [];
 
+  ensureDeckList(deckId).catch(() => {});
+
   let session = null;
-  try { session = await startSession(deckId, 'multiple'); } catch {}
+  const sessionOpts = deck.__revisionMode ? { source: 'revision' } : {};
+  try { session = await startSession(deckId, 'multiple', sessionOpts); } catch {}
   registerCleanup(() => { try { session && session.abort && session.abort(); } catch {} });
 
   async function playPrompt() {
@@ -136,12 +142,26 @@ export async function renderMultipleChoice(root, deckId) {
         ]);
       })
     ));
-    stage.appendChild(el('div', { class: 'fc-hint center' }, ['Atalhos: ', el('span', { class: 'kbd' }, ['1']), ' ', el('span', { class: 'kbd' }, ['2']), ' ', el('span', { class: 'kbd' }, ['3']), ' ', el('span', { class: 'kbd' }, ['4']), ' · ', el('span', { class: 'kbd' }, ['S']), ' ouvir']));
+    if (selectedIdx !== -1) {
+      currentRevBtn = revisionButton({ card, deck });
+      currentRevBtn.classList.add('revision-btn-inline-row');
+      const rowRev = el('div', { class: 'mc-revision-row' }, [currentRevBtn]);
+      stage.appendChild(rowRev);
+    } else {
+      currentRevBtn = null;
+    }
+    stage.appendChild(el('div', { class: 'fc-hint center' }, ['Atalhos: ', el('span', { class: 'kbd' }, ['1']), ' ', el('span', { class: 'kbd' }, ['2']), ' ', el('span', { class: 'kbd' }, ['3']), ' ', el('span', { class: 'kbd' }, ['4']), ' · ', el('span', { class: 'kbd' }, ['S']), ' ouvir · ', el('span', { class: 'kbd' }, ['R']), ' revisar']));
   }
 
   function onKey(e) {
-    if (i >= cards.length || locked) return;
+    if (i >= cards.length) return;
     if (e.key === 's' || e.key === 'S') { e.preventDefault(); playPrompt().catch(() => {}); return; }
+    if ((e.key === 'r' || e.key === 'R') && locked && currentRevBtn) {
+      e.preventDefault();
+      currentRevBtn.toggle();
+      return;
+    }
+    if (locked) return;
     const n = parseInt(e.key, 10);
     if (n >= 1 && n <= 4) choose(n - 1);
   }

@@ -10,6 +10,11 @@ import { burst, rain } from './confetti.js';
 import { getMedalMeta } from '../core/medals.js';
 import { go } from './router.js';
 import { fmtTime } from '../core/util.js';
+import { cardMenu } from './cardMenu.js';
+import { ensureDeckList, markCard, isMarked } from '../core/reviewList.js';
+import { getDeck } from '../core/store.js';
+import { toast } from './toast.js';
+import { iconBookmark } from './icons.js';
 
 export function openSessionEndModal({ summary, finishResponse, onReplay, onBack, deckId, mode, errors }) {
   // Fecha qualquer modal aberto antes
@@ -87,7 +92,7 @@ export function openSessionEndModal({ summary, finishResponse, onReplay, onBack,
       ]) : null,
 
       // Correção dos erros (write/multiple)
-      (Array.isArray(errors) && errors.length) ? renderErrorReview(errors, mode) : null,
+      (Array.isArray(errors) && errors.length) ? renderErrorReview(errors, mode, deckId) : null,
 
       // Medalhas
       newMedals.length ? el('div', { class: 'session-end-medals', attrs: { 'data-testid': 'session-end-medals' } }, [
@@ -147,30 +152,102 @@ export function openSessionEndModal({ summary, finishResponse, onReplay, onBack,
   return backdrop;
 }
 
-function renderErrorReview(errors, mode) {
+function renderErrorReview(errors, mode, deckId) {
   const title = errors.length === 1 ? '1 carta pra revisar' : `${errors.length} cartas pra revisar`;
+  const deck = deckId ? getDeck(deckId) : null;
+
+  // Garante cache local da lista de revisão (kebab depende disso pra mostrar
+  // estado on/off correto). Best-effort: kebab funciona mesmo sem cache, só
+  // pode mostrar "Adicionar" num card já marcado por 1 ciclo.
+  if (deckId) ensureDeckList(deckId).catch(() => {});
+
+  // Resolve card.id em deck.cards via fuzzy match no front (errors traz só
+  // front/correct/given). Não é perfeito pra duplicatas mas cobre o caso comum.
+  function findCardId(err) {
+    if (!deck || !deck.cards) return null;
+    const found = deck.cards.find(c => c.front === err.front && c.back === err.correct);
+    return found ? found.id : null;
+  }
+
+  const markAllBtn = el('button', {
+    class: 'btn btn-sm session-end-mark-all',
+    attrs: { type: 'button' }
+  }, [
+    iconBookmark(13),
+    document.createTextNode(` Marcar todos (${errors.length})`)
+  ]);
+
+  let marking = false;
+  async function onMarkAll() {
+    if (marking || !deck) return;
+    marking = true;
+    markAllBtn.disabled = true;
+
+    const ids = errors.map(findCardId).filter(Boolean);
+    const newlyMarked = [];
+    for (const id of ids) {
+      if (!isMarked(deckId, id)) newlyMarked.push(id);
+    }
+    if (newlyMarked.length === 0) {
+      toast('Tudo já estava marcado', { kind: 'info' });
+      markAllBtn.remove();
+      return;
+    }
+    let added = 0;
+    for (const id of newlyMarked) {
+      try {
+        await markCard(deckId, id, 'session_end_modal');
+        added++;
+      } catch {}
+    }
+    toast(`${added} cartas marcadas`, {
+      kind: 'success',
+      action: {
+        label: 'Desfazer',
+        onClick: async () => {
+          const { unmarkCard } = await import('../core/reviewList.js');
+          for (const id of newlyMarked) {
+            try { await unmarkCard(deckId, id); } catch {}
+          }
+        }
+      }
+    });
+    markAllBtn.remove();
+  }
+  markAllBtn.addEventListener('click', onMarkAll);
+
   return el('div', {
     class: 'session-end-errors',
     attrs: { 'data-testid': 'session-end-errors' }
   }, [
-    el('div', { class: 'session-end-errors-title' }, [title]),
+    el('div', { class: 'session-end-errors-header' }, [
+      el('div', { class: 'session-end-errors-title' }, [title]),
+      errors.length > 1 && deck ? markAllBtn : null
+    ].filter(Boolean)),
     el('div', { class: 'session-end-errors-list' },
-      errors.map((err) => el('div', {
-        class: 'session-end-error',
-        attrs: { 'data-testid': 'session-end-error' }
-      }, [
-        el('div', { class: 'session-end-error-front' }, [err.front]),
-        el('div', { class: 'session-end-error-rows' }, [
-          el('div', { class: 'session-end-error-row session-end-error-row-good' }, [
-            el('span', { class: 'session-end-error-tag' }, ['Certo']),
-            el('span', { class: 'session-end-error-text' }, [err.correct])
-          ]),
-          err.given ? el('div', { class: 'session-end-error-row session-end-error-row-bad' }, [
-            el('span', { class: 'session-end-error-tag' }, [mode === 'write' ? 'Você' : 'Marcou']),
-            el('span', { class: 'session-end-error-text' }, [err.given])
-          ]) : null
-        ].filter(Boolean))
-      ]))
+      errors.map((err) => {
+        const cardId = findCardId(err);
+        const card = cardId && deck ? deck.cards.find(c => c.id === cardId) : null;
+        return el('div', {
+          class: 'session-end-error',
+          attrs: { 'data-testid': 'session-end-error' }
+        }, [
+          card ? el('div', { class: 'session-end-error-menu' }, [
+            cardMenu({ card, deck, context: 'sessionEnd' })
+          ]) : null,
+          el('div', { class: 'session-end-error-front' }, [err.front]),
+          el('div', { class: 'session-end-error-rows' }, [
+            el('div', { class: 'session-end-error-row session-end-error-row-good' }, [
+              el('span', { class: 'session-end-error-tag' }, ['Certo']),
+              el('span', { class: 'session-end-error-text' }, [err.correct])
+            ]),
+            err.given ? el('div', { class: 'session-end-error-row session-end-error-row-bad' }, [
+              el('span', { class: 'session-end-error-tag' }, [mode === 'write' ? 'Você' : 'Marcou']),
+              el('span', { class: 'session-end-error-text' }, [err.given])
+            ]) : null
+          ].filter(Boolean))
+        ].filter(Boolean));
+      })
     )
   ]);
 }

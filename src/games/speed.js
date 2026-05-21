@@ -72,7 +72,8 @@ export async function renderSpeed(root, deckId) {
   async function start() {
     started = true;
     startAt = performance.now();
-    try { session = await startSession(deckId, 'speed'); } catch {}
+    const sessionOpts = deck.__revisionMode ? { source: 'revision' } : {};
+    try { session = await startSession(deckId, 'speed', sessionOpts); } catch {}
     registerCleanup(() => { try { session && session.abort && session.abort(); } catch {} });
     timerId = setInterval(() => {
       const remaining = Math.max(0, ROUND_MS - (performance.now() - startAt));

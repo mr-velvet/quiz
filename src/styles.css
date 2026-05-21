@@ -1503,7 +1503,7 @@ a:hover { text-decoration: underline; }
 /* Lista de cartas dentro do deck: speaker colado em cada lado */
 .card-row {
   display: grid;
-  grid-template-columns: 32px 1fr auto 1fr auto auto;
+  grid-template-columns: 32px 1fr auto 1fr auto auto auto;
   column-gap: 10px;
   align-items: center;
 }
@@ -1511,12 +1511,13 @@ a:hover { text-decoration: underline; }
 .card-row-back-audio { display: inline-flex; }
 .card-row-back { padding-left: 16px; }
 .card-row-stats { padding-left: 12px; }
+.card-row-menu { display: inline-flex; align-items: center; }
 
 @media (max-width: 600px) {
   .card-row {
     grid-template-columns: 32px 1fr auto auto;
     grid-template-areas:
-      "idx front frontAudio stats"
+      "idx front frontAudio menu"
       "idx back backAudio stats";
     row-gap: 6px;
   }
@@ -1526,6 +1527,26 @@ a:hover { text-decoration: underline; }
   .card-row-back { grid-area: back; }
   .card-row-back-audio { grid-area: backAudio; }
   .card-row-stats { grid-area: stats; align-self: center; padding-left: 6px; }
+  .card-row-menu { grid-area: menu; align-self: center; justify-self: end; }
+}
+
+/* Kebab compacto pra ações por carta. Hit area mínima 44 via padding extra invisível. */
+.card-action-kebab {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 6px !important;
+  color: var(--text-mute);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.card-action-kebab:hover { color: var(--text-dim); background: var(--bg-elev-2); }
+.card-action-kebab[aria-expanded="true"] { color: var(--accent); }
+@media (max-width: 600px) {
+  .card-action-kebab {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 /* ===== Tabs ===== */
@@ -1648,6 +1669,7 @@ a:hover { text-decoration: underline; }
   animation: fadeIn 100ms ease;
 }
 .dropdown-popup-right { left: auto; right: 0; }
+.dropdown-popup-up { top: auto; bottom: calc(100% + 6px); }
 
 .dropdown-item {
   background: transparent;
@@ -1664,7 +1686,13 @@ a:hover { text-decoration: underline; }
   gap: 8px;
 }
 .dropdown-item:hover { background: var(--bg-elev-2); }
+.dropdown-item:focus-visible { background: var(--bg-elev-2); outline: none; }
 .dropdown-item-active { color: var(--accent); }
+.dropdown-item-icon { flex-shrink: 0; color: var(--text-dim); }
+.dropdown-item:hover .dropdown-item-icon,
+.dropdown-item:focus-visible .dropdown-item-icon { color: var(--text); }
+.dropdown-item[aria-checked="true"] .dropdown-item-icon { color: var(--accent); }
+.dropdown-item-label { flex: 1; min-width: 0; text-overflow: ellipsis; overflow: hidden; }
 
 .dropdown-sep {
   height: 1px;
@@ -1867,5 +1895,153 @@ a:hover { text-decoration: underline; }
 }
 .write-feedback-hint {
   margin-top: 4px;
+}
+
+/* ===== Toast action button (ex: "Desfazer") ===== */
+
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.toast-text { display: inline-flex; align-items: center; gap: 6px; }
+.toast-action {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.toast-action:hover { background: rgba(255, 209, 102, 0.12); }
+.toast-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ===== Botão de revisão pós-resposta (modos de jogo) ===== */
+
+.btn-revision {
+  min-width: 110px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  background: transparent;
+  transition: border-color var(--t-fast), color var(--t-fast), background var(--t-fast);
+}
+.btn-revision:hover { color: var(--text); border-color: var(--border); }
+.btn-revision[aria-pressed="true"],
+.btn-revision-on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+/* Variantes de posicionamento por modo */
+.revision-btn-inline {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+}
+/* Flashcards card precisa de position: relative pra abrigar o botão. */
+.fc-card { position: relative; }
+
+.revision-btn-inline-row { /* dentro de row alinhado à direita */ }
+.mc-revision-row,
+.write-revision-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 4px;
+}
+
+/* ===== CTA "Treinar revisão (N)" na tela do deck ===== */
+
+.revision-cta {
+  display: block;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  cursor: pointer;
+  transition: transform var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+.revision-cta:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+.revision-cta.hidden { display: none; }
+
+.revision-cta-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.revision-cta-text { flex: 1; min-width: 0; }
+.revision-cta-title {
+  font-family: 'Fraunces', serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.revision-cta-diamond { color: var(--accent); }
+.revision-cta-counter { color: var(--accent); font-weight: 700; }
+.revision-cta-subtitle {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* Grid do picker de modo dentro do modal */
+.revision-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* ===== Session end modal — header com botão "Marcar todos" + kebab por linha ===== */
+
+.session-end-errors-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.session-end-mark-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-end-error { position: relative; }
+.session-end-error-menu {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+}
+.session-end-error-front { padding-right: 36px; }
+
+/* ===== Acessibilidade: prefers-reduced-motion ===== */
+
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-popup { animation: none; }
+  .revision-cta:hover { transform: none; }
+  .toast { transition: opacity 0s; }
 }
 

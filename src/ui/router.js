@@ -17,6 +17,7 @@ import { renderMultipleChoice } from '../games/multiple-choice.js';
 import { renderWrite } from '../games/write.js';
 import { renderMatch } from '../games/match.js';
 import { renderSpeed } from '../games/speed.js';
+import { renderRevisionMode } from '../games/revision.js';
 import { onChange } from '../core/util.js';
 import { closeAllModals } from './modal.js';
 
@@ -95,6 +96,10 @@ function render() {
 
   if (parts[0] === 'play' && parts[1] && parts[2]) {
     const [, deckId, mode] = parts;
+    // Sessão de revisão: ?source=revision usa o wrapper que filtra cards.
+    if (query.source === 'revision') {
+      return renderRevisionMode(app, deckId, mode);
+    }
     switch (mode) {
       case 'flashcards': return renderFlashcards(app, deckId);
       case 'multiple':   return renderMultipleChoice(app, deckId);
@@ -103,6 +108,12 @@ function render() {
       case 'speed':      return renderSpeed(app, deckId);
       default:           go('/'); return;
     }
+  }
+
+  if (parts[0] === 'revisao' && parts[1] && parts[2]) {
+    // Rota alternativa explícita: /revisao/:deckId/:mode
+    const [, deckId, mode] = parts;
+    return renderRevisionMode(app, deckId, mode);
   }
 
   go('/');

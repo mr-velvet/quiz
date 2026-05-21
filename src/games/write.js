@@ -6,6 +6,8 @@ import { playCardAudio, speakerButton, detectDeckLang, stopAudio, prefetchCardAu
 import { startSession } from '../core/sessionLoop.js';
 import { openSessionEndModal } from '../ui/sessionEndModal.js';
 import { floatingXp } from '../ui/xpCounter.js';
+import { revisionButton } from '../ui/revisionButton.js';
+import { ensureDeckList } from '../core/reviewList.js';
 
 export async function renderWrite(root, deckId) {
   const deck = getDeck(deckId);
@@ -14,11 +16,15 @@ export async function renderWrite(root, deckId) {
   const cards = shuffle(deck.cards);
   const deckLang = detectDeckLang(deck);
   let i = 0, correct = 0, wrong = 0, locked = false;
+  let currentRevBtn = null;
   const totalDeckCards = deck.cards.length;
   const errors = [];
 
+  ensureDeckList(deckId).catch(() => {});
+
   let session = null;
-  try { session = await startSession(deckId, 'write'); } catch {}
+  const sessionOpts = deck.__revisionMode ? { source: 'revision' } : {};
+  try { session = await startSession(deckId, 'write', sessionOpts); } catch {}
   registerCleanup(() => { try { session && session.abort && session.abort(); } catch {} });
 
   async function playPrompt() {
@@ -48,6 +54,11 @@ export async function renderWrite(root, deckId) {
     if (e.key === 's' || e.key === 'S') {
       e.preventDefault();
       (locked ? playAnswer() : playPrompt()).catch(() => {});
+      return;
+    }
+    if ((e.key === 'r' || e.key === 'R') && locked && currentRevBtn) {
+      e.preventDefault();
+      currentRevBtn.toggle();
     }
   }
   window.addEventListener('keydown', onKey);
@@ -149,9 +160,18 @@ export async function renderWrite(root, deckId) {
     }, [input, feedback, state === 'wrong' && acceptedHint ? acceptedHint : null]);
 
     stage.appendChild(form);
+
+    if (locked) {
+      currentRevBtn = revisionButton({ card, deck });
+      currentRevBtn.classList.add('revision-btn-inline-row');
+      stage.appendChild(el('div', { class: 'write-revision-row' }, [currentRevBtn]));
+    } else {
+      currentRevBtn = null;
+    }
+
     stage.appendChild(el('div', { class: 'row gap-2', style: { justifyContent: 'center' } }, [
       locked
-        ? el('button', { class: 'btn btn-primary', onClick: () => { i++; locked = false; rerender(); } }, ['Próxima', el('span', { class: 'kbd' }, ['Enter'])])
+        ? el('button', { class: 'btn btn-primary', onClick: () => { i++; locked = false; currentRevBtn = null; rerender(); } }, ['Próxima', el('span', { class: 'kbd' }, ['Enter'])])
         : el('button', { class: 'btn', onClick: () => {
             const card = cards[i];
             recordCardResult(deckId, card.id, false);

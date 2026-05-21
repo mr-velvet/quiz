@@ -33,7 +33,8 @@ export async function renderMatch(root, deckId) {
   tiles = shuffle(tiles);
 
   let session = null;
-  try { session = await startSession(deckId, 'match'); } catch {}
+  const sessionOpts = deck.__revisionMode ? { source: 'revision' } : {};
+  try { session = await startSession(deckId, 'match', sessionOpts); } catch {}
   registerCleanup(() => { try { session && session.abort && session.abort(); } catch {} });
 
   let selected = null;

@@ -124,6 +124,36 @@ export function iconUser(size = 18) {
   ], '0 0 24 24', 1.6);
 }
 
+// Bookmark outline (estado "não marcado")
+export function iconBookmark(size = 14) {
+  return svg(size, [
+    'M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z'
+  ], '0 0 24 24', 1.6);
+}
+
+// Bookmark com check (estado "marcado")
+export function iconBookmarkCheck(size = 14) {
+  return svg(size, [
+    'M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z',
+    'M9 10l2.5 2.5L15 8.5'
+  ], '0 0 24 24', 1.6);
+}
+
+// Copy (duas folhas sobrepostas)
+export function iconCopy(size = 14) {
+  return svg(size, [
+    'M9 9h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1z',
+    'M5 15V4a1 1 0 0 1 1-1h10'
+  ], '0 0 24 24', 1.6);
+}
+
+// Check simples (usado em items do menu ativos)
+export function iconCheck(size = 14) {
+  return svg(size, [
+    'M5 12l4.5 4.5L19 7'
+  ], '0 0 24 24', 1.8);
+}
+
 // Chama (streak)
 export function iconFlame(size = 14) {
   return svg(size, [

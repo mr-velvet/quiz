@@ -15,6 +15,9 @@ import { dropdown } from './dropdown.js';
 import { toast } from './toast.js';
 import { iconLock, iconGlobe, iconKebab } from './icons.js';
 import { deckGridSkeleton } from './skeleton.js';
+import { cardMenu } from './cardMenu.js';
+import { revisionCta } from './revisionCta.js';
+import { ensureDeckList } from '../core/reviewList.js';
 
 const MODES = [
   { key: 'flashcards', icon: '🃏', title: 'Flashcards', desc: 'Vire as cartas, marque o que sabe.' },
@@ -123,6 +126,7 @@ function paint(root, deck) {
     // Modos
     el('div', { class: 'stack stack-3' }, [
       el('h2', {}, ['Modos de estudo']),
+      revisionCta({ deck }),
       el('div', { class: 'mode-grid' },
         MODES.map(m => el('div', {
           class: 'mode-card',
@@ -147,6 +151,9 @@ function paint(root, deck) {
         : el('div', { class: 'stack stack-2' },
             (() => {
               const lang = detectDeckLang(deck);
+              // Garante cache de revisão pra esse deck antes de pintar
+              // (o cardMenu lê o estado on/off via getter síncrono).
+              ensureDeckList(deck.id).catch(() => {});
               return cards.map((c, i) => el('div', {
                 class: 'panel card-row',
                 style: { padding: '12px 16px' }
@@ -158,7 +165,8 @@ function paint(root, deck) {
                 el('div', { class: 'card-row-back-audio' }, [speakerButton(() => playCardAudio(deck.id, c.id, 'back', lang?.back))]),
                 el('div', { class: 'tiny muted card-row-stats' }, [
                   isMine ? `${(c.stats && c.stats.correct) || 0}/${((c.stats && c.stats.correct) || 0) + ((c.stats && c.stats.wrong) || 0)}` : ''
-                ])
+                ]),
+                el('div', { class: 'card-row-menu' }, [cardMenu({ card: c, deck, context: 'deck', lang })])
               ]));
             })()
           )

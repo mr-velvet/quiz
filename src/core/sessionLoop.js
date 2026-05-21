@@ -32,13 +32,18 @@ const COMBO_SOUND_MILESTONES = [5, 10, 20, 30];
 let activeSessionId = null;
 export function isActiveSession(id) { return id === activeSessionId; }
 
-export async function startSession(deckId, mode) {
+export async function startSession(deckId, mode, opts = {}) {
   const tzOffsetMin = -new Date().getTimezoneOffset();
+  const body = { deck_id: deckId, mode, tz_offset_min: tzOffsetMin };
+  // Source da sessão (ex: 'revision' pra sessões a partir da lista de
+  // revisão). Backend lê e grava em `study_sessions.meta.source` pra KPI
+  // e pra medalha "revision_master".
+  if (opts.source) body.source = opts.source;
   const r = await fetch('/api/sessions', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deck_id: deckId, mode, tz_offset_min: tzOffsetMin })
+    body: JSON.stringify(body)
   });
   if (!r.ok) throw new Error('session_create_failed');
   const { id: sessionId } = await r.json();

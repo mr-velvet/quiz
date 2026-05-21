@@ -120,6 +120,33 @@ export function explore({ sort = 'popular', q = '', page = 1 } = {}) {
   return request('GET', `/explore${qs ? '?' + qs : ''}`);
 }
 
+// ---------- Revisão ----------
+// Marca card pra revisar. `deckId` é opcional (servidor deduz do card),
+// mas mandar evita um JOIN no backend.
+export function addCardToReview(cardId, deckId) {
+  const body = deckId ? { deckId } : undefined;
+  return request('POST', `/cards/${encodeURIComponent(cardId)}/review`, body);
+}
+
+export function removeCardFromReview(cardId) {
+  return request('DELETE', `/cards/${encodeURIComponent(cardId)}/review`);
+}
+
+// Lista de cards marcados pra revisão num deck (user atual).
+export function fetchDeckReviewCards(deckId) {
+  return request('GET', `/decks/${encodeURIComponent(deckId)}/review`);
+}
+
+// Contagem N pro CTA. Leve, devolve só { count }.
+export function fetchDeckReviewCount(deckId) {
+  return request('GET', `/decks/${encodeURIComponent(deckId)}/review/count`);
+}
+
+// Contagens agregadas por deck pro user atual. Útil em listagens.
+export function fetchReviewCounts() {
+  return request('GET', '/me/review-counts');
+}
+
 // ---------- Folders ----------
 export function listFolders() {
   return request('GET', '/folders');

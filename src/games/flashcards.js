@@ -7,6 +7,8 @@ import { playCardAudio, speakerButton, detectDeckLang, stopAudio, prefetchCardAu
 import { startSession } from '../core/sessionLoop.js';
 import { openSessionEndModal } from '../ui/sessionEndModal.js';
 import { floatingXp } from '../ui/xpCounter.js';
+import { revisionButton } from '../ui/revisionButton.js';
+import { ensureDeckList } from '../core/reviewList.js';
 
 export async function renderFlashcards(root, deckId) {
   const deck = getDeck(deckId);
@@ -16,12 +18,18 @@ export async function renderFlashcards(root, deckId) {
   const deckLang = detectDeckLang(deck);
   let i = 0;
   let flipped = false;
+  let answered = false; // verdadeiro entre answer() e troca de carta
   let known = 0, unknown = 0;
+  let currentRevBtn = null;
   const totalDeckCards = deck.cards.length;
   const errors = [];
 
+  // Prefetch da lista de revisão pra que o botão "+ Revisão" reflita estado on/off correto.
+  ensureDeckList(deckId).catch(() => {});
+
   let session = null;
-  try { session = await startSession(deckId, 'flashcards'); }
+  const sessionOpts = deck.__revisionMode ? { source: 'revision' } : {};
+  try { session = await startSession(deckId, 'flashcards', sessionOpts); }
   catch { /* sem session — modo offline */ }
   // Aborta sessão se user navegar pra outra rota antes do finish.
   registerCleanup(() => { try { session && session.abort && session.abort(); } catch {} });
@@ -69,9 +77,16 @@ export async function renderFlashcards(root, deckId) {
       if (session) session.onWrong(card.id);
       errors.push({ front: card.front, correct: card.back, given: '' });
     }
-    i++;
-    flipped = false;
+    answered = true;
+    // Re-renderiza com botão + Revisão visível antes de avançar.
     rerender();
+    setTimeout(() => {
+      i++;
+      flipped = false;
+      answered = false;
+      currentRevBtn = null;
+      rerender();
+    }, 850);
   }
 
   function prefetchNeighbors() {
@@ -105,6 +120,13 @@ export async function renderFlashcards(root, deckId) {
       ])
     ]);
     cardEl.appendChild(speakerButton(playCurrent));
+    if (answered) {
+      currentRevBtn = revisionButton({ card, deck });
+      currentRevBtn.classList.add('revision-btn-inline');
+      cardEl.appendChild(currentRevBtn);
+    } else {
+      currentRevBtn = null;
+    }
     stage.appendChild(cardEl);
     stage.appendChild(el('div', { class: 'fc-controls' }, [
       el('button', { class: 'btn btn-danger btn-lg', onClick: () => answer(false), attrs: { 'data-testid': 'fc-unknown' } }, ['Não sei', el('span', { class: 'kbd' }, ['1'])]),
@@ -142,6 +164,10 @@ export async function renderFlashcards(root, deckId) {
     else if (e.key === '1') answer(false);
     else if (e.key === '2') answer(true);
     else if (e.key === 's' || e.key === 'S') { e.preventDefault(); playCurrent().catch(() => {}); }
+    else if ((e.key === 'r' || e.key === 'R') && answered && currentRevBtn) {
+      e.preventDefault();
+      currentRevBtn.toggle();
+    }
     else if (e.key === 'ArrowRight' && i < cards.length - 1) { i++; flipped = false; rerender(); }
     else if (e.key === 'ArrowLeft' && i > 0) { i--; flipped = false; rerender(); }
   }
