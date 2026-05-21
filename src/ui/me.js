@@ -46,7 +46,7 @@ export async function renderMe(root) {
       ]),
       el('div', { class: 'me-header-info stack stack-2 grow' }, [
         el('div', { class: 'me-xp-line' }, [
-          el('span', { class: 'me-xp-big' }, [`${formatNumber(stats.xp_total)}`]),
+          el('span', { class: 'me-xp-big', attrs: { 'data-testid': 'eu-stats-xp' } }, [`${formatNumber(stats.xp_total)}`]),
           el('span', { class: 'tiny muted' }, [' XP total'])
         ]),
         el('div', { class: 'me-level-bar' }, [
@@ -104,15 +104,29 @@ export async function renderMe(root) {
       attrs: { 'data-testid': 'me-decks-list' }
     }, [
       el('h3', { class: 'me-section-title' }, ['Decks que você joga']),
-      el('div', { class: 'me-decks' }, topDecks.map(d => el('div', {
-        class: 'me-deck-row',
-        onClick: () => go(`/deck/${d.deck_id}`)
-      }, [
-        el('div', { class: 'me-deck-row-name' }, [d.name]),
-        el('div', { class: 'me-deck-row-meta tiny muted' }, [
-          `Nv ${d.mastery_level} · ${d.mastery_title} · ${formatNumber(d.xp_deck)} XP · ${d.sessions_count} sessões`
-        ])
-      ])))
+      el('div', { class: 'me-decks' }, topDecks.map(d => {
+        // Estima pct até próximo nível usando curva por deck (mesmas thresholds do server)
+        const deckCurve = [0, 50, 150, 400, 800, 1500, 2500, 4000, 6500, 10000];
+        const lv = d.mastery_level;
+        const floor = deckCurve[lv - 1] || 0;
+        const next = lv < deckCurve.length ? deckCurve[lv] : floor;
+        const pct = next > floor ? Math.max(0, Math.min(1, (d.xp_deck - floor) / (next - floor))) : 1;
+        return el('div', {
+          class: 'me-deck-row',
+          onClick: () => go(`/deck/${d.deck_id}`)
+        }, [
+          el('div', { class: 'me-deck-row-main' }, [
+            el('div', { class: 'me-deck-row-name' }, [d.name]),
+            el('div', { class: 'tiny muted' }, [
+              `${d.mastery_title} · ${formatNumber(d.xp_deck)} XP · ${d.sessions_count} sessões`
+            ]),
+            el('div', { class: 'me-deck-row-bar' }, [
+              el('div', { class: 'me-deck-row-bar-fill', style: { width: `${pct * 100}%` } })
+            ])
+          ]),
+          el('div', { class: 'me-deck-row-lv' }, [`Nv ${d.mastery_level}`])
+        ]);
+      }))
     ]));
   }
 }

@@ -11,6 +11,7 @@ import { onKind } from '../core/events.js';
 import { streakBadge } from './streakBadge.js';
 import { levelBadge } from './levelBadge.js';
 import { isMuted, toggleMute } from '../core/sfx.js';
+import { iconSpeakerOn, iconSpeakerOff, iconUser } from './icons.js';
 
 export function topbar({ showBack = false, title = '', compactStats = false } = {}) {
   const left = showBack
@@ -47,21 +48,24 @@ function renderRight(container, compactStats) {
     attrs: {
       'data-testid': 'topbar-mute',
       'aria-label': isMuted() ? 'Som desligado' : 'Som ligado',
-      title: isMuted() ? 'Som desligado (M)' : 'Som ligado (M)'
+      title: isMuted() ? 'Som desligado (M)' : 'Som ligado (M)',
+      type: 'button'
     },
     onClick: () => {
       toggleMute();
       renderRight(container, compactStats);
     }
-  }, [isMuted() ? '🔇' : '🔊']);
+  });
+  muteBtn.appendChild(isMuted() ? iconSpeakerOff(18) : iconSpeakerOn(18));
 
   const streak = streakBadge(stats.current_streak, { onClick: () => go('/eu') });
   const level = levelBadge(stats, { compact: isCompact, onClick: () => go('/eu') });
   const meBtn = el('button', {
     class: 'topbar-me',
-    attrs: { 'aria-label': 'Meu perfil', title: 'Meu perfil' },
+    attrs: { 'aria-label': 'Meu perfil', title: 'Meu perfil', type: 'button' },
     onClick: () => go('/eu')
-  }, ['👤']);
+  });
+  meBtn.appendChild(iconUser(18));
 
   container.append(streak, level, muteBtn, meBtn);
 }
@@ -79,7 +83,8 @@ function installMuteShortcut() {
       document.querySelectorAll('.topbar-mute').forEach(btn => {
         const off = isMuted();
         btn.classList.toggle('topbar-mute-off', off);
-        btn.textContent = off ? '🔇' : '🔊';
+        btn.innerHTML = '';
+        btn.appendChild(off ? iconSpeakerOff(18) : iconSpeakerOn(18));
         btn.setAttribute('aria-label', off ? 'Som desligado' : 'Som ligado');
       });
     }

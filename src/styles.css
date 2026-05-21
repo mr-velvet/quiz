@@ -209,9 +209,9 @@ a:hover { text-decoration: underline; }
   background: var(--bg-elev);
 }
 
-/* Mute btn */
+/* Mute btn / Me btn (≥40px touch targets) */
 .topbar-mute, .topbar-me {
-  width: 34px; height: 34px;
+  width: 40px; height: 40px;
   border-radius: 50%;
   border: 1px solid var(--border-soft);
   background: var(--bg-elev);
@@ -221,9 +221,15 @@ a:hover { text-decoration: underline; }
   display: inline-grid;
   place-items: center;
   transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+  padding: 0;
 }
+.topbar-mute svg, .topbar-me svg { display: block; width: 18px; height: 18px; }
 .topbar-mute:hover, .topbar-me:hover { color: var(--text); border-color: var(--border); }
 .topbar-mute-off { color: var(--text-mute); opacity: 0.7; }
+
+/* Streak / Level: touch target altura mínima 40 */
+.streak-badge { min-height: 40px; padding: 4px 14px; }
+.level-badge { min-height: 40px; padding: 4px 14px 4px 6px; }
 
 /* Combo overlay */
 .combo-overlay {
@@ -480,7 +486,7 @@ a:hover { text-decoration: underline; }
   .me-header-top { flex-direction: column; align-items: stretch; gap: 12px; }
 }
 .me-level-big {
-  width: 92px; height: 92px;
+  width: 120px; height: 120px;
   border-radius: 50%;
   background: linear-gradient(135deg, rgba(255, 209, 102, 0.18), rgba(192, 132, 252, 0.12));
   border: 2px solid rgba(255, 209, 102, 0.4);
@@ -490,10 +496,11 @@ a:hover { text-decoration: underline; }
 }
 .me-level-num {
   font-family: 'Fraunces', serif;
-  font-size: 38px;
+  font-size: 64px;
   font-weight: 700;
   color: var(--xp);
   line-height: 1;
+  letter-spacing: -0.04em;
 }
 .me-level-title { margin-top: 2px; }
 .me-header-info { flex: 1; min-width: 0; }
@@ -569,37 +576,47 @@ a:hover { text-decoration: underline; }
   background: linear-gradient(135deg, rgba(192, 132, 252, 0.06), rgba(255, 209, 102, 0.04));
 }
 
-/* Heatmap */
-.heatmap { display: flex; flex-direction: column; gap: 8px; }
+/* Heatmap — estilo GitHub compactado. 7 colunas × N linhas (semanas). */
+.heatmap { display: flex; flex-direction: column; gap: 10px; }
 .heatmap-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-  max-width: 320px;
+  grid-template-columns: repeat(7, 14px);
+  grid-auto-rows: 14px;
+  gap: 3px;
+  width: max-content;
 }
 @media (min-width: 700px) {
-  .heatmap-grid { max-width: 420px; gap: 6px; }
+  .heatmap-grid {
+    grid-template-columns: repeat(7, 18px);
+    grid-auto-rows: 18px;
+    gap: 4px;
+  }
 }
 .heatmap-cell {
-  aspect-ratio: 1;
-  border-radius: 4px;
+  border-radius: 3px;
   background: var(--bg-elev-2);
   border: 1px solid var(--border-soft);
 }
-.heatmap-cell-empty { opacity: 0; }
-.heatmap-cell-0 { background: var(--bg-elev-2); }
-.heatmap-cell-1 { background: rgba(255, 209, 102, 0.15); }
-.heatmap-cell-2 { background: rgba(255, 209, 102, 0.35); }
-.heatmap-cell-3 { background: rgba(255, 209, 102, 0.6); }
-.heatmap-cell-4 { background: var(--xp); }
+.heatmap-cell-empty {
+  background: transparent;
+  border: 0;
+}
+.heatmap-cell-0 {
+  background: var(--bg-elev-2);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.heatmap-cell-1 { background: rgba(255, 209, 102, 0.18); border-color: rgba(255, 209, 102, 0.25); }
+.heatmap-cell-2 { background: rgba(255, 209, 102, 0.4);  border-color: rgba(255, 209, 102, 0.4); }
+.heatmap-cell-3 { background: rgba(255, 209, 102, 0.65); border-color: rgba(255, 209, 102, 0.65); }
+.heatmap-cell-4 { background: var(--xp); border-color: var(--xp); }
 .heatmap-legend {
   display: flex;
   align-items: center;
   gap: 4px;
 }
-.heatmap-legend .heatmap-cell { width: 12px; height: 12px; aspect-ratio: unset; }
+.heatmap-legend .heatmap-cell { width: 10px; height: 10px; aspect-ratio: unset; }
 
-/* Me decks */
+/* Me decks — com barra mini inline */
 .me-decks { display: flex; flex-direction: column; gap: 6px; }
 .me-deck-row {
   padding: 10px 14px;
@@ -608,9 +625,35 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--border-soft);
   cursor: pointer;
   transition: border-color var(--t-fast), background var(--t-fast);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
 }
 .me-deck-row:hover { border-color: var(--border); background: var(--bg-elev-2); }
+.me-deck-row-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .me-deck-row-name { font-weight: 500; }
+.me-deck-row-bar {
+  height: 4px;
+  width: 100%;
+  border-radius: 4px;
+  background: var(--bg-elev-2);
+  overflow: hidden;
+}
+.me-deck-row-bar-fill { height: 100%; background: var(--xp); transition: width 400ms ease; }
+.me-deck-row-lv {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 100px;
+  background: rgba(255, 209, 102, 0.08);
+  border: 1px solid rgba(255, 209, 102, 0.3);
+  color: var(--xp);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 /* Deck level pill no detalhe */
 .deck-level-pill { color: var(--xp); border-color: rgba(255, 209, 102, 0.4); background: rgba(255, 209, 102, 0.06); }

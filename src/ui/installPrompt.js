@@ -8,6 +8,11 @@ const DISMISSED_KEY = 'flashy:install-dismissed-at';
 const DISMISS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SHOW_DELAY_MS = 5000;
 
+// Não aparece durante jogo (rotas #/play/*).
+function isInGameplay() {
+  return (location.hash || '').startsWith('#/play/');
+}
+
 function isMobile() {
   try { return window.matchMedia('(pointer:coarse)').matches; } catch { return false; }
 }
@@ -78,7 +83,7 @@ export function mountInstallPrompt(parent) {
     e.preventDefault();
     deferredPrompt = e;
     setTimeout(() => {
-      if (shownNode) return;
+      if (shownNode || isInGameplay()) return;
       shownNode = buildBanner({
         title: 'Instalar Flashy',
         sub: 'Adicione à tela inicial pra acesso rápido',
@@ -101,7 +106,7 @@ export function mountInstallPrompt(parent) {
   // iOS Safari
   if (isIOSSafari()) {
     setTimeout(() => {
-      if (shownNode || isStandalone()) return;
+      if (shownNode || isStandalone() || isInGameplay()) return;
       shownNode = buildBanner({
         title: 'Instalar Flashy',
         sub: 'Toque em Compartilhar → "Adicionar à Tela Inicial"',

@@ -18,6 +18,7 @@ export async function renderWrite(root, deckId) {
 
   let session = null;
   try { session = await startSession(deckId, 'write'); } catch {}
+  registerCleanup(() => { try { session && session.abort && session.abort(); } catch {} });
 
   async function playPrompt() {
     if (i >= cards.length) return;

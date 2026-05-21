@@ -97,3 +97,37 @@ export function iconChevronDown(size = 12) {
 export function iconPlus(size = 14) {
   return svg(size, ['M8 3v10', 'M3 8h10'], '0 0 16 16', 1.5);
 }
+
+// Speaker on (3 ondas)
+export function iconSpeakerOn(size = 18) {
+  return svg(size, [
+    'M3 9v6h4l5 4V5L7 9z',
+    'M16 8a4 4 0 0 1 0 8',
+    'M19 5a8 8 0 0 1 0 14'
+  ], '0 0 24 24', 1.6);
+}
+
+// Speaker muted (X em cima)
+export function iconSpeakerOff(size = 18) {
+  return svg(size, [
+    'M3 9v6h4l5 4V5L7 9z',
+    'M16 9l5 6',
+    'M21 9l-5 6'
+  ], '0 0 24 24', 1.6);
+}
+
+// User (avatar genérico)
+export function iconUser(size = 18) {
+  return svg(size, [
+    'M12 12a4 4 0 1 0 0-8a4 4 0 0 0 0 8z',
+    'M4 20c1-4 4-6 8-6s7 2 8 6'
+  ], '0 0 24 24', 1.6);
+}
+
+// Chama (streak)
+export function iconFlame(size = 14) {
+  return svg(size, [
+    'M12 3c1 3 3 4 3 7a4 4 0 0 1-8 0c0-2 1-3 2-3c0-2-1-3 3-4z',
+    'M10 14c0 1.5.8 3 2 3s2-1.5 2-3'
+  ], '0 0 24 24', 1.5);
+}

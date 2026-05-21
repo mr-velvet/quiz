@@ -55,6 +55,7 @@ export async function loadMedals() {
 }
 
 // Chamado após cada finish. response = body de POST /sessions/:id/finish.
+// Server é autoritativo — substituímos tudo pelos valores do server.
 export function applyFinishResponse(finishResp) {
   if (!finishResp || !finishResp.stats) return;
   cache = {
@@ -63,16 +64,22 @@ export function applyFinishResponse(finishResp) {
     level: finishResp.stats.level,
     current_streak: finishResp.stats.current_streak,
     longest_streak: finishResp.stats.longest_streak,
-    last_active_date: finishResp.stats.last_active_date
+    last_active_date: finishResp.stats.last_active_date,
+    pending_xp: 0 // reseta estimativa otimista
   };
-  // Não temos level_title aqui; refetch leve.
   emit('statsChange', cache);
-  // Refetch full pra puxar heatmap atualizado.
   loadStats().catch(() => {});
   if (finishResp.new_medals && finishResp.new_medals.length) {
-    // Atualiza catálogo
     loadMedals().catch(() => {});
   }
+}
+
+// Soma XP otimista durante a sessão pra topbar refletir em real-time.
+// Reconciliado pelo applyFinishResponse no fim.
+export function addPendingXp(delta) {
+  if (!Number.isFinite(delta) || delta <= 0) return;
+  cache = { ...cache, pending_xp: (cache.pending_xp || 0) + delta };
+  emit('statsChange', cache);
 }
 
 export async function refresh() {

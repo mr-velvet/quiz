@@ -10,6 +10,14 @@ import { mountInstallPrompt } from './ui/installPrompt.js';
 import { registerSW } from './core/pwa.js';
 import { installDebugHooks } from './core/debug.js';
 
+// Marca de respeito a reduced-motion no <html> pra QA conferir.
+try {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.documentElement.setAttribute('data-testid', 'motion-respect');
+    document.documentElement.setAttribute('data-reduced-motion', '1');
+  }
+} catch {}
+
 (async () => {
   try {
     // Migração roda antes do bootstrap pra que a lista de decks já venha cheia.

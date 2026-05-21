@@ -4,6 +4,7 @@ import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
 import { startSession } from '../core/sessionLoop.js';
 import { openSessionEndModal } from '../ui/sessionEndModal.js';
+import { floatingXp } from '../ui/xpCounter.js';
 
 const ROUND_MS = 60_000;
 
@@ -53,6 +54,11 @@ export async function renderSpeed(root, deckId) {
     if (ok) {
       correct++;
       if (session) session.onCorrect(current.id, { cardStats: current.stats });
+      const node = stage.querySelectorAll('.mc-option')[idx];
+      if (node) {
+        const rect = node.getBoundingClientRect();
+        floatingXp({ x: rect.right - 50, y: rect.top + 8, value: 6 });
+      }
     } else {
       wrong++;
       if (session) session.onWrong(current.id);
@@ -65,6 +71,7 @@ export async function renderSpeed(root, deckId) {
     started = true;
     startAt = performance.now();
     try { session = await startSession(deckId, 'speed'); } catch {}
+    registerCleanup(() => { try { session && session.abort && session.abort(); } catch {} });
     timerId = setInterval(() => {
       const remaining = Math.max(0, ROUND_MS - (performance.now() - startAt));
       const tEl = stage.querySelector('[data-timer]');

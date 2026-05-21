@@ -27,6 +27,7 @@ export async function renderMultipleChoice(root, deckId) {
 
   let session = null;
   try { session = await startSession(deckId, 'multiple'); } catch {}
+  registerCleanup(() => { try { session && session.abort && session.abort(); } catch {} });
 
   async function playPrompt() {
     if (i >= cards.length) return;

@@ -87,7 +87,7 @@ export function openSessionEndModal({ summary, finishResponse, onReplay, onBack,
       ]) : null,
 
       // Medalhas
-      newMedals.length ? el('div', { class: 'session-end-medals' }, [
+      newMedals.length ? el('div', { class: 'session-end-medals', attrs: { 'data-testid': 'session-end-medals' } }, [
         el('div', { class: 'session-end-medals-title' }, [
           newMedals.length === 1 ? 'Medalha conquistada' : `${newMedals.length} medalhas conquistadas`
         ]),

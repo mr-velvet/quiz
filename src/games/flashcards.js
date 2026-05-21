@@ -22,6 +22,8 @@ export async function renderFlashcards(root, deckId) {
   let session = null;
   try { session = await startSession(deckId, 'flashcards'); }
   catch { /* sem session — modo offline */ }
+  // Aborta sessão se user navegar pra outra rota antes do finish.
+  registerCleanup(() => { try { session && session.abort && session.abort(); } catch {} });
 
   async function playCurrent() {
     if (i >= cards.length) return;

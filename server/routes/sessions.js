@@ -143,6 +143,7 @@ router.post('/:id/finish', async (req, res) => {
   const totalDeckCards = body.total_deck_cards ? Math.max(0, body.total_deck_cards|0) : null;
   const durationMs = Math.max(0, body.duration_ms|0);
   const tzOffsetMin = Number.isFinite(body.tz_offset_min) ? body.tz_offset_min : 0;
+  const abandoned = !!body.abandoned;
 
   try {
     const sr = await query(
@@ -157,6 +158,19 @@ router.post('/:id/finish', async (req, res) => {
     if (!s) return res.status(404).json({ error: 'not_found' });
     if (s.user_id !== user.id) return res.status(404).json({ error: 'not_found' });
     if (s.status !== 'pending') return res.status(409).json({ error: 'already_finished' });
+
+    // Caminho "abandoned" — sai cedo, zera XP, marca status='abandoned'.
+    if (abandoned) {
+      await query(
+        `UPDATE study_sessions
+         SET status = 'abandoned', ended_at = now(), duration_ms = $2,
+             correct = $3, wrong = $4, max_combo = $5, cards_total = $6,
+             xp_earned = 0
+         WHERE id = $1`,
+        [sessId, durationMs, correct, wrong, maxCombo, cardsTotal]
+      );
+      return res.json({ session_id: sessId, abandoned: true, xp_earned: 0 });
+    }
 
     // Sanidade. Sessão muito curta → registra mas zera XP.
     const cardCountR = await query(`SELECT count(*)::int AS n FROM cards WHERE deck_id = $1`, [s.deck_id]);

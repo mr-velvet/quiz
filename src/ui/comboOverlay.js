@@ -4,6 +4,7 @@
 
 import { el } from '../core/util.js';
 import { onKind } from '../core/events.js';
+import { isActiveSession } from '../core/sessionLoop.js';
 
 let host = null;
 let textEl = null;
@@ -23,13 +24,17 @@ export function mountComboOverlay(parent) {
 
   try { prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch {}
 
-  // Reactive a eventos
+  // Reactive a eventos. Filtra por sessionId pra ignorar sessions órfãs/abortadas.
   onKind('correct', (p) => {
+    if (p.sessionId && !isActiveSession(p.sessionId)) return;
     const c = p.combo;
     if (c >= 5) show(c);
     else hide();
   });
-  onKind('wrong', () => hide());
+  onKind('wrong', (p) => {
+    if (p && p.sessionId && !isActiveSession(p.sessionId)) return;
+    hide();
+  });
   onKind('sessionEnd', () => hide());
   onKind('sessionStart', () => hide());
   return host;

@@ -4,6 +4,7 @@ import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
 import { startSession } from '../core/sessionLoop.js';
 import { openSessionEndModal } from '../ui/sessionEndModal.js';
+import { floatingXp } from '../ui/xpCounter.js';
 
 // Match grid. 6 pares por rodada (12 tiles).
 
@@ -33,6 +34,7 @@ export async function renderMatch(root, deckId) {
 
   let session = null;
   try { session = await startSession(deckId, 'match'); } catch {}
+  registerCleanup(() => { try { session && session.abort && session.abort(); } catch {} });
 
   let selected = null;
   let startTime = 0;
@@ -114,6 +116,8 @@ export async function renderMatch(root, deckId) {
       // Sessão: cada par casado = 1 "acerto" do card pairId
       const card = cardById.get(tile.pairId);
       if (session) session.onCorrect(tile.pairId, { cardStats: card ? card.stats : null });
+      const rect = node.getBoundingClientRect();
+      floatingXp({ x: rect.right - 40, y: rect.top + 8, value: 8 });
       setTimeout(() => {
         node.classList.add('matched');
         prevNode?.classList.add('matched');

@@ -355,9 +355,13 @@ export async function saveDeck(deck) {
 }
 
 // Compat com games: chama backend, atualiza cache otimisticamente.
+// Backend POST /api/cards/:id/result só aceita se user é dono do deck.
+// Pra evitar 404 ruído em deck público de outro user, só dispara API se isMine.
 export function recordCardResult(deckId, cardId, correct) {
   const deck = deckCache.get(deckId);
+  let isMine = false;
   if (deck) {
+    isMine = !!deck.isMine;
     const card = deck.cards.find(c => c.id === cardId);
     if (card) {
       if (!card.stats) card.stats = { correct: 0, wrong: 0, lastSeenAt: 0 };
@@ -366,8 +370,7 @@ export function recordCardResult(deckId, cardId, correct) {
       card.stats.lastSeenAt = Date.now();
     }
   }
-  // Fire-and-forget: ignora erro (jogo é tempo-real, não pode bloquear).
-  // Em decks não-meus o backend retorna 404 — silenciamos.
+  if (!isMine) return; // deck público de outro user — não tenta gravar stats per-card
   api.recordCardResult(cardId, correct).catch(() => {});
 }
 
