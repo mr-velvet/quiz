@@ -1,6 +1,6 @@
 # Flashy (quiz) — Progresso
 
-Última atualização: 2026-05-21 (correção ao final de write/multiple-choice)
+Última atualização: 2026-05-21 (sprint 5 — cards-pra-revisão + menu contextual + TTS Google)
 
 > **Antes de qualquer trabalho neste repo, ler `CONCEPTS.md`** — visão de produto,
 > princípios e decisões estratégicas. Este arquivo aqui é o estado operacional.
@@ -23,10 +23,12 @@
 - **Deploy:** `cd ~/ved/devops-workflow-2026 && .\scripts\did.ps1 deploy quiz`
 
 ### Env vars necessárias em produção
-- `OPENAI_API_KEY` — pro TTS (tts-1).
 - `DATABASE_URL` — injetada pela plataforma.
-- `GCS_BUCKET` — default `didlu-imagestore`.
+- `GCS_BUCKET` — default `didlu-imagestore`. TTS Google usa ADC do compute engine (escopo cloud-platform).
 - `DEV_TOKEN` (opcional) — pra liberar `/api/dev/*` em prod.
+- `GOOGLE_TTS_ENABLED` (opcional, default true). False = força OpenAI fallback.
+- `OPENAI_TTS_FALLBACK` (opcional, default false). True + Google falhando 2× = cai pra OpenAI.
+- `OPENAI_API_KEY` — opcional agora (só usado se fallback ativado).
 
 ## Sprints entregues
 
@@ -35,7 +37,46 @@
 ### Sprint 3 — Ownership/Visibility/Pastas/Explore
 ### Sprint 4 — Gamificação ✅
 ### Sprint 4.5 — Ajustes pós-gamificação ✅
-### Sprint 4.6 — Correção ao final ✅ (atual)
+### Sprint 4.6 — Correção ao final ✅
+### Sprint 5 — Cards-pra-revisão + menu contextual + TTS Google ✅ (atual)
+
+Três blocos entregues em uma sprint só, todos batendo em pontos críticos do produto.
+
+**A. Menu contextual + cards-pra-revisão.** Specs em `specs/PRODUCT-SPEC-revision.md`,
+`UX-SPEC-revision-menu.md`, `DECISIONS-sprint-revision.md`.
+- Many-to-many: vínculo é do user, não do deck. Funciona até em deck público de
+  outro user (sombra privada — dono não vê, não é notificado).
+- Migration `005_card_reviews.sql`: tabela `card_reviews(user_id, card_id,
+  deck_id, added_at)` PK composta + índice (user_id, deck_id). Adiciona coluna
+  `study_sessions.source` (decidido por robustez sobre JSONB original) + medalha
+  `revision_master` (50 acertos lifetime em sessão de revisão).
+- Endpoints: `POST/DELETE /api/cards/:id/review`, `GET /api/decks/:id/review`,
+  `GET /api/decks/:id/review/count`, `GET /api/me/review-counts`.
+- UI: kebab (`src/ui/cardMenu.js`) na lista do deck + por linha de erro no
+  sessionEndModal + Explore implícito. Modos com input claro (flashcards/MC/write)
+  ganham botão inline `+ Revisão` / `✓ Marcada` (`src/ui/revisionButton.js`)
+  com atalho `R` pós-resposta — Match/Speed coberto só pelo sessionEndModal.
+  `revisionCta` no deck mostra "Revisar marcados (N)" + picker de modo; esconde
+  N=0. Wrapper `src/games/revision.js` muta `deck.cards` no cache pra
+  subset filtrado, restaura no cleanup do router.
+- Toast com action "Desfazer" pra add/remove (`src/ui/toast.js` estendido).
+- Dropdown estendido com `role=menu/menuitem`, navegação ↑↓/Home/End, flip
+  vertical (`.dropdown-popup-up`).
+- Sessão de revisão vale XP/streak/medalhas normais (mesmo `sessionLoop`), só
+  marcada com `source='revision'` no POST.
+
+**B. TTS via Google Cloud Standard.** Substituiu OpenAI tts-1 (~4× mais barato).
+- Reusa `getAccessToken()` da VM (escopo `cloud-platform`).
+- `TTS_MODEL = 'google-standard-v1'` (hash novo, não colide com áudios antigos
+  tts-1 que continuam servindo de cache via URLs já persistidas em `card.audio`).
+- Vozes Standard femininas por idioma: en-US-C, pt-BR-A, es-ES-A, fr-FR-A,
+  de-DE-A, it-IT-A. Default en-US.
+- Fallback opcional via env (`OPENAI_TTS_FALLBACK=true`) só dispara se Google
+  falhar 2×. OpenAI key agora opcional.
+
+**C. Bug fix Enter no modo escrever.** Implicit submission do form falhava em
+estados com input disabled. Trata `Enter` explicitamente (onKeyDown no input
+via `requestSubmit`; listener global pra estado locked).
 
 Modal de fim de sessão (`src/ui/sessionEndModal.js`) agora aceita prop `errors`
 e renderiza lista de cartas erradas:
