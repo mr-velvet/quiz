@@ -11,7 +11,7 @@ import { getMedalMeta } from '../core/medals.js';
 import { go } from './router.js';
 import { fmtTime } from '../core/util.js';
 
-export function openSessionEndModal({ summary, finishResponse, onReplay, onBack, deckId, mode }) {
+export function openSessionEndModal({ summary, finishResponse, onReplay, onBack, deckId, mode, errors }) {
   // Fecha qualquer modal aberto antes
   document.querySelectorAll('.modal-backdrop').forEach(n => n.remove());
 
@@ -86,6 +86,9 @@ export function openSessionEndModal({ summary, finishResponse, onReplay, onBack,
         el('span', {}, [streakMessage(streakMarker, finishResponse.stats.current_streak)])
       ]) : null,
 
+      // Correção dos erros (write/multiple)
+      (Array.isArray(errors) && errors.length) ? renderErrorReview(errors, mode) : null,
+
       // Medalhas
       newMedals.length ? el('div', { class: 'session-end-medals', attrs: { 'data-testid': 'session-end-medals' } }, [
         el('div', { class: 'session-end-medals-title' }, [
@@ -142,6 +145,34 @@ export function openSessionEndModal({ summary, finishResponse, onReplay, onBack,
   }
 
   return backdrop;
+}
+
+function renderErrorReview(errors, mode) {
+  const title = errors.length === 1 ? '1 carta pra revisar' : `${errors.length} cartas pra revisar`;
+  return el('div', {
+    class: 'session-end-errors',
+    attrs: { 'data-testid': 'session-end-errors' }
+  }, [
+    el('div', { class: 'session-end-errors-title' }, [title]),
+    el('div', { class: 'session-end-errors-list' },
+      errors.map((err) => el('div', {
+        class: 'session-end-error',
+        attrs: { 'data-testid': 'session-end-error' }
+      }, [
+        el('div', { class: 'session-end-error-front' }, [err.front]),
+        el('div', { class: 'session-end-error-rows' }, [
+          el('div', { class: 'session-end-error-row session-end-error-row-good' }, [
+            el('span', { class: 'session-end-error-tag' }, ['Certo']),
+            el('span', { class: 'session-end-error-text' }, [err.correct])
+          ]),
+          err.given ? el('div', { class: 'session-end-error-row session-end-error-row-bad' }, [
+            el('span', { class: 'session-end-error-tag' }, [mode === 'write' ? 'Você' : 'Marcou']),
+            el('span', { class: 'session-end-error-text' }, [err.given])
+          ]) : null
+        ].filter(Boolean))
+      ]))
+    )
+  ]);
 }
 
 function statItem(label, value, tone) {

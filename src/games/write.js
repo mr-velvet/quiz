@@ -15,6 +15,7 @@ export async function renderWrite(root, deckId) {
   const deckLang = detectDeckLang(deck);
   let i = 0, correct = 0, wrong = 0, locked = false;
   const totalDeckCards = deck.cards.length;
+  const errors = [];
 
   let session = null;
   try { session = await startSession(deckId, 'write'); } catch {}
@@ -123,6 +124,7 @@ export async function renderWrite(root, deckId) {
         } else {
           wrong++;
           if (session) session.onWrong(card.id);
+          errors.push({ front: card.front, correct: card.back, given: ans.trim() });
         }
         locked = true;
         rerender(ok ? 'correct' : 'wrong', ans);
@@ -139,6 +141,7 @@ export async function renderWrite(root, deckId) {
             recordCardResult(deckId, card.id, false);
             if (session) session.onWrong(card.id);
             wrong++;
+            errors.push({ front: card.front, correct: card.back, given: '' });
             locked = true;
             rerender('wrong', '');
           } }, ['Não sei'])
@@ -159,7 +162,7 @@ export async function renderWrite(root, deckId) {
     openSessionEndModal({
       summary: result.summary, finishResponse: result.finishResponse,
       onReplay: () => replay(), onBack: () => go(`/deck/${deckId}`),
-      deckId, mode: 'write'
+      deckId, mode: 'write', errors
     });
   }
 

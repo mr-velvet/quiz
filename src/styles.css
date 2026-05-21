@@ -456,6 +456,86 @@ a:hover { text-decoration: underline; }
 }
 .session-end-actions .btn { flex: 1; max-width: 220px; justify-content: center; }
 
+/* Correção dos erros (review) */
+.session-end-errors {
+  margin: 18px 0 8px;
+  text-align: left;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 14px 14px 10px;
+}
+.session-end-errors-title {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+.session-end-errors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.session-end-errors-list::-webkit-scrollbar { width: 6px; }
+.session-end-errors-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
+.session-end-error {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.session-end-error-front {
+  font-family: 'Fraunces', serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+.session-end-error-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.session-end-error-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.session-end-error-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 100px;
+  font-weight: 700;
+}
+.session-end-error-row-good .session-end-error-tag {
+  background: rgba(110, 231, 168, 0.15);
+  color: var(--good);
+  border: 1px solid rgba(110, 231, 168, 0.3);
+}
+.session-end-error-row-bad .session-end-error-tag {
+  background: rgba(255, 122, 122, 0.12);
+  color: var(--bad);
+  border: 1px solid rgba(255, 122, 122, 0.3);
+}
+.session-end-error-row-good .session-end-error-text { color: var(--text); }
+.session-end-error-row-bad .session-end-error-text {
+  color: var(--text-dim);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 122, 122, 0.5);
+}
+.session-end-error-text { word-break: break-word; }
+
 /* Card flash de acerto/erro */
 .fc-card.flash-correct, .mc-option.flash-correct, .write-input.flash-correct {
   animation: flashCorrect 350ms ease;

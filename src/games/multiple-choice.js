@@ -24,6 +24,7 @@ export async function renderMultipleChoice(root, deckId) {
   let currentOptions = [];
   let currentCorrectIdx = -1;
   const totalDeckCards = deck.cards.length;
+  const errors = [];
 
   let session = null;
   try { session = await startSession(deckId, 'multiple'); } catch {}
@@ -66,6 +67,7 @@ export async function renderMultipleChoice(root, deckId) {
     } else {
       wrong++;
       if (session) session.onWrong(card.id);
+      errors.push({ front: card.front, correct: card.back, given: currentOptions[idx] || '' });
     }
     rerender(idx);
     setTimeout(() => {
@@ -88,7 +90,7 @@ export async function renderMultipleChoice(root, deckId) {
     openSessionEndModal({
       summary: result.summary, finishResponse: result.finishResponse,
       onReplay: () => replay(), onBack: () => go(`/deck/${deckId}`),
-      deckId, mode: 'multiple'
+      deckId, mode: 'multiple', errors
     });
   }
 
