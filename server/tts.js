@@ -1,36 +1,73 @@
-// TTS endpoint: gera áudio dos cards via OpenAI tts-1 e cacheia no GCS.
+// TTS endpoint: gera áudio dos cards via Google Cloud TTS (Standard) e cacheia no GCS.
 // Cache key: sha256(text + lang + voice + model). URL pública via st.did.lu.
 //
 // Fluxo:
 // 1. Recebe { text, lang? }. Sanitiza, valida tamanho.
 // 2. Calcula hash determinístico → checa se já existe no GCS via HEAD.
 // 3. Se existe, retorna URL e fim.
-// 4. Se não, chama OpenAI tts-1, recebe mp3, sobe pro GCS, retorna URL.
+// 4. Se não, chama Google TTS, recebe mp3 (base64 decodificado), sobe pro GCS, retorna URL.
+//
+// Provider: Google Cloud Text-to-Speech v1 (voices Standard, ~$4 / 1M chars).
+// Auth: Application Default Credentials (mesmo token usado pro upload no GCS,
+// obtido via metadata server na VM ou via GCP_ACCESS_TOKEN em dev).
+// Scope necessário no token: https://www.googleapis.com/auth/cloud-platform.
+//
+// Fallback opcional pra OpenAI tts-1:
+//   - GOOGLE_TTS_ENABLED=false  → força usar OpenAI
+//   - OPENAI_TTS_FALLBACK=true  → se Google falhar (após 1 retry), tenta OpenAI
+// Default: Google ativo, sem fallback (falha = 500).
 //
 // Bucket: didlu-imagestore (público). Path: quiz/tts/<hash>.mp3.
 // URL pública curta: https://st.did.lu/quiz/tts/<hash>.mp3.
+//
+// Áudios antigos (gerados por tts-1) continuam funcionando: URLs ficam cacheadas
+// no card.audio.front.url e a constante TTS_MODEL nova ('google-standard-v1')
+// muda o hash de gerações futuras — sem colisão.
 
 const crypto = require('crypto');
 const https = require('https');
 const http = require('http');
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // opcional (só pra fallback)
 const GCS_BUCKET = process.env.GCS_BUCKET || 'didlu-imagestore';
 const GCS_PREFIX = 'quiz/tts';
 const ST_BASE = 'https://st.did.lu';
 const GCS_BASE = `https://storage.googleapis.com/${GCS_BUCKET}`;
-const TTS_MODEL = 'tts-1';
+const TTS_MODEL = 'google-standard-v1';
 const MAX_TEXT_LEN = 500;
 
-const VOICE_BY_LANG = {
+const GOOGLE_TTS_ENABLED = String(process.env.GOOGLE_TTS_ENABLED ?? 'true').toLowerCase() !== 'false';
+const OPENAI_TTS_FALLBACK = String(process.env.OPENAI_TTS_FALLBACK ?? 'false').toLowerCase() === 'true';
+
+// Vozes Google Standard por idioma (femininas naturais; escolha conservadora
+// que privilegia clareza pra estudo de vocabulário).
+const GOOGLE_VOICE_BY_LANG = {
+  en: { languageCode: 'en-US', name: 'en-US-Standard-C' },
+  pt: { languageCode: 'pt-BR', name: 'pt-BR-Standard-A' },
+  es: { languageCode: 'es-ES', name: 'es-ES-Standard-A' },
+  fr: { languageCode: 'fr-FR', name: 'fr-FR-Standard-A' },
+  de: { languageCode: 'de-DE', name: 'de-DE-Standard-A' },
+  it: { languageCode: 'it-IT', name: 'it-IT-Standard-A' },
+  default: { languageCode: 'en-US', name: 'en-US-Standard-C' }
+};
+
+// Mantido só pro fallback OpenAI.
+const OPENAI_VOICE_BY_LANG = {
   en: 'alloy', pt: 'nova', es: 'nova', fr: 'shimmer', de: 'onyx', it: 'echo',
   default: 'alloy'
 };
 
-function pickVoice(lang) {
-  return VOICE_BY_LANG[lang] || VOICE_BY_LANG.default;
+function pickGoogleVoice(lang) {
+  return GOOGLE_VOICE_BY_LANG[lang] || GOOGLE_VOICE_BY_LANG.default;
 }
 
+function pickOpenAIVoice(lang) {
+  return OPENAI_VOICE_BY_LANG[lang] || OPENAI_VOICE_BY_LANG.default;
+}
+
+// Hash usa o nome da voz Google como "voice" identificador.
+// Pra requests forçados a OpenAI (GOOGLE_TTS_ENABLED=false) usamos voice OpenAI —
+// isso garante que os dois universos de áudio ficam em paths separados no GCS.
 function hashKey(text, lang, voice, model) {
   return crypto.createHash('sha256')
     .update(`${model}|${voice}|${lang || ''}|${text}`)
@@ -83,11 +120,55 @@ function checkCache(hash) {
   });
 }
 
+// Chama Google Cloud Text-to-Speech v1.
+// Response: { audioContent: <base64 mp3> }. Decodifica e devolve Buffer.
+function callGoogleTTS(text, langCode, voiceName) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const token = await getAccessToken();
+      const body = JSON.stringify({
+        input: { text },
+        voice: { languageCode: langCode, name: voiceName },
+        audioConfig: { audioEncoding: 'MP3' }
+      });
+      const req = https.request('https://texttospeech.googleapis.com/v1/text:synthesize', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': Buffer.byteLength(body)
+        },
+        timeout: 30000
+      }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode !== 200) {
+            return reject(new Error(`Google TTS ${res.statusCode}: ${raw.slice(0, 200)}`));
+          }
+          try {
+            const json = JSON.parse(raw);
+            if (!json.audioContent) return reject(new Error('Google TTS: no audioContent in response'));
+            resolve(Buffer.from(json.audioContent, 'base64'));
+          } catch (e) {
+            reject(new Error(`Google TTS parse error: ${e.message}`));
+          }
+        });
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Google TTS timeout')); });
+      req.write(body);
+      req.end();
+    } catch (e) { reject(e); }
+  });
+}
+
 function callOpenAITTS(text, voice) {
   return new Promise((resolve, reject) => {
     if (!OPENAI_API_KEY) return reject(new Error('OPENAI_API_KEY not set'));
     const body = JSON.stringify({
-      model: TTS_MODEL,
+      model: 'tts-1',
       voice,
       input: text,
       response_format: 'mp3'
@@ -120,6 +201,7 @@ function callOpenAITTS(text, voice) {
 
 // Upload via GCS JSON API. Usa Application Default Credentials (na VM via
 // service account do compute engine; localmente via `gcloud auth application-default login`).
+// O mesmo token cobre Google TTS — scope precisa incluir cloud-platform.
 let cachedToken = null;
 let tokenExpiry = 0;
 let tokenPromise = null;
@@ -220,15 +302,36 @@ function checkRate(ip) {
 // In-flight dedup por hash: chamadas concorrentes pro mesmo texto compartilham geração.
 const inFlight = new Map(); // hash -> Promise<{url, hash, cached, bytes}>
 
-async function generateAndStore(text, langCode, voice, hash) {
-  let audio;
-  try {
-    audio = await callOpenAITTS(text, voice);
-  } catch (e) {
-    // 1 retry com backoff curto
-    await new Promise(r => setTimeout(r, 400));
-    audio = await callOpenAITTS(text, voice);
+// Tenta Google TTS com 1 retry. Se falhar e OPENAI_TTS_FALLBACK=true, cai pra
+// OpenAI (e log avisa). Caso contrário propaga o erro.
+async function generateAudio(text, langCode) {
+  if (GOOGLE_TTS_ENABLED) {
+    const voice = pickGoogleVoice(langCode);
+    try {
+      return await callGoogleTTS(text, voice.languageCode, voice.name);
+    } catch (e1) {
+      // 1 retry curto antes de desistir do Google.
+      await new Promise(r => setTimeout(r, 400));
+      try {
+        return await callGoogleTTS(text, voice.languageCode, voice.name);
+      } catch (e2) {
+        if (!OPENAI_TTS_FALLBACK) throw e2;
+        console.warn('Google TTS falhou 2x, fallback OpenAI:', e2.message);
+      }
+    }
   }
+  // Caminho OpenAI (forçado ou fallback).
+  const openaiVoice = pickOpenAIVoice(langCode);
+  try {
+    return await callOpenAITTS(text, openaiVoice);
+  } catch (e) {
+    await new Promise(r => setTimeout(r, 400));
+    return await callOpenAITTS(text, openaiVoice);
+  }
+}
+
+async function generateAndStore(text, langCode, hash) {
+  const audio = await generateAudio(text, langCode);
   await uploadToGCS(audio, hash);
   rememberHash(hash);
   return { url: publicUrl(hash), hash, cached: false, bytes: audio.length };
@@ -243,8 +346,14 @@ async function handleTTS(req, res) {
     const text = sanitize(raw);
     if (!text) return res.status(400).json({ error: 'text required' });
     const langCode = (lang || '').toLowerCase().slice(0, 5) || null;
-    const voice = pickVoice(langCode);
-    const hash = hashKey(text, langCode, voice, TTS_MODEL);
+
+    // Voice usado no hash depende do provider que vai gerar (Google por default).
+    // Isso garante que se algum dia o user trocar GOOGLE_TTS_ENABLED no meio,
+    // os áudios novos vão pra hashes separadas e não colidem.
+    const voiceForHash = GOOGLE_TTS_ENABLED
+      ? pickGoogleVoice(langCode).name
+      : pickOpenAIVoice(langCode);
+    const hash = hashKey(text, langCode, voiceForHash, TTS_MODEL);
     const url = publicUrl(hash);
 
     const hit = await checkCache(hash);
@@ -252,7 +361,7 @@ async function handleTTS(req, res) {
 
     let pending = inFlight.get(hash);
     if (!pending) {
-      pending = generateAndStore(text, langCode, voice, hash).finally(() => inFlight.delete(hash));
+      pending = generateAndStore(text, langCode, hash).finally(() => inFlight.delete(hash));
       inFlight.set(hash, pending);
     }
     const result = await pending;
