@@ -1,6 +1,6 @@
 # Flashy (quiz) — Progresso
 
-Última atualização: 2026-05-20 (sprint gamificação)
+Última atualização: 2026-05-21 (ajustes pós-gamificação: áudio + import + write)
 
 > **Antes de qualquer trabalho neste repo, ler `CONCEPTS.md`** — visão de produto,
 > princípios e decisões estratégicas. Este arquivo aqui é o estado operacional.
@@ -33,7 +33,27 @@
 ### Sprint 1 — MVP (5 modos, deck via texto, modal custom, router)
 ### Sprint 2 — TTS (OpenAI tts-1, cache GCS)
 ### Sprint 3 — Ownership/Visibility/Pastas/Explore
-### Sprint 4 — Gamificação ✅ (atual)
+### Sprint 4 — Gamificação ✅
+### Sprint 4.5 — Ajustes pós-gamificação ✅ (atual)
+
+Três pequenos blocos com impacto direto na percepção do produto:
+
+- **Áudio:** detecção de idioma roda 1× por deck na criação (server/langDetect.js)
+  e fica em `decks.lang_front` / `decks.lang_back` (migration 004). Decks antigos
+  (criados antes da migração) fazem backfill lazy via PATCH quando o dono toca o
+  primeiro áudio. `playCardAudio` agora prefere a coluna do deck antes de
+  detectar localmente. `prefetchCardAudio` é chamado pelos modos
+  (flashcards / write / multiple-choice) pra esquentar a URL da próxima carta
+  enquanto o user vê a atual — corta a latência percebida em quase tudo. Server
+  também mantém um set de hashes já confirmados no GCS pra pular o HEAD em hits
+  repetidos.
+- **Importação:** novo `src/ui/importPicker.js` com seletor de separador
+  (auto/tab/vírgula/`;`/`-`) e, quando o texto tiver >2 colunas, seletor de quais
+  colunas viram frente e verso. Default colunas 1 e 2. Integrado no modal "novo
+  deck" (home) e "adicionar cartas" (deck).
+- **Write:** `card.back` agora pode listar múltiplos significados (separados por
+  `,`, `;`, `/`, `|`) — qualquer um deles bate como certo. `splitMeanings` /
+  `matchesAnyMeaning` em `src/core/util.js`. Hint no erro mostra "Aceita: X · Y · Z".
 
 Adiciona feedback emocional ao acerto + progressão de longo prazo:
 - **XP por modo** (Flashcards 5, MC 10, Match 8, Speed 6, Write 20), modulado
