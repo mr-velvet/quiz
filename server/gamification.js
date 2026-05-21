@@ -289,6 +289,11 @@ function evaluateMedals({ userStats, session, deckStats, earned }) {
   // typist_100: lifetime write correct
   if ((userStats.lifetime_write_correct || 0) >= 100) want('typist_100');
 
+  // revision_master: 50 acertos lifetime em sessões de revisão "limpas" (wrong=0).
+  // O caller só popula lifetime_revision_clean_correct quando a sessão atual é
+  // de revisão (otimização). Sessões normais nunca disparam essa medalha.
+  if ((userStats.lifetime_revision_clean_correct || 0) >= 50) want('revision_master');
+
   // deck mastery
   if (deckStats && deckStats.mastery_level >= 5)  want('deck_lv5');
   if (deckStats && deckStats.mastery_level >= 8)  want('deck_lv8');

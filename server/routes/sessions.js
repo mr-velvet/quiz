@@ -17,6 +17,9 @@ const router = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALID_MODES = new Set(['flashcards', 'multiple', 'write', 'match', 'speed']);
 const VALID_EVENT_KINDS = new Set(['correct', 'wrong', 'combo_break', 'flush', 'session_end']);
+// Tipos de sessão derivada. NULL = sessão normal. 'revision' = subset (lista
+// de revisão do user no deck).
+const VALID_SOURCES = new Set(['revision']);
 
 function isUuid(s) { return typeof s === 'string' && UUID_RE.test(s); }
 function requireDb(res) {
@@ -43,6 +46,10 @@ router.post('/', async (req, res) => {
   const deckId = body.deck_id;
   const mode = body.mode;
   const tzOffsetMin = Number.isFinite(body.tz_offset_min) ? body.tz_offset_min : 0;
+  // source: marca sessão como derivada (ex.: 'revision' = jogando lista de
+  // revisão, não o deck inteiro). null/omitido = sessão normal.
+  const sourceRaw = typeof body.source === 'string' ? body.source.trim() : null;
+  const source = sourceRaw && VALID_SOURCES.has(sourceRaw) ? sourceRaw : null;
 
   if (!isUuid(deckId)) return res.status(400).json({ error: 'invalid_deck_id' });
   if (!VALID_MODES.has(mode)) return res.status(400).json({ error: 'invalid_mode' });
@@ -62,10 +69,10 @@ router.post('/', async (req, res) => {
     }
 
     const sr = await query(
-      `INSERT INTO study_sessions (user_id, deck_id, mode, status, meta)
-       VALUES ($1, $2, $3, 'pending', $4)
+      `INSERT INTO study_sessions (user_id, deck_id, mode, status, meta, source)
+       VALUES ($1, $2, $3, 'pending', $4, $5)
        RETURNING id, started_at`,
-      [user.id, deckId, mode, JSON.stringify({ tz_offset_min: tzOffsetMin })]
+      [user.id, deckId, mode, JSON.stringify({ tz_offset_min: tzOffsetMin }), source]
     );
     res.status(201).json({ id: sr.rows[0].id, started_at: sr.rows[0].started_at });
   } catch (e) {
@@ -147,7 +154,7 @@ router.post('/:id/finish', async (req, res) => {
 
   try {
     const sr = await query(
-      `SELECT s.id, s.user_id, s.deck_id, s.mode, s.status, s.started_at, s.meta,
+      `SELECT s.id, s.user_id, s.deck_id, s.mode, s.status, s.started_at, s.meta, s.source,
               d.removed_by_admin, d.deleted_at
        FROM study_sessions s
        JOIN decks d ON d.id = s.deck_id
@@ -311,6 +318,20 @@ router.post('/:id/finish', async (req, res) => {
         lifetimeWrite = r.rows[0].n;
       }
 
+      // Lifetime revision correct (pra medalha revision_master): soma de
+      // `correct` em sessões de revisão "limpas" (wrong=0). Só calcula se a
+      // sessão atual é de revisão — fora isso, o número não muda.
+      let lifetimeRevisionClean = 0;
+      if (s.source === 'revision') {
+        const r = await client.query(
+          `SELECT COALESCE(SUM(correct), 0)::int AS n FROM study_sessions
+           WHERE user_id = $1 AND source = 'revision' AND status = 'finished'
+             AND wrong = 0`,
+          [user.id]
+        );
+        lifetimeRevisionClean = r.rows[0].n;
+      }
+
       // decks_owned: contagem de decks ativos
       const ownedR = await client.query(
         `SELECT count(*)::int AS n FROM decks
@@ -342,6 +363,7 @@ router.post('/:id/finish', async (req, res) => {
         total_correct: usPrev.total_correct + correct,
         total_wrong: usPrev.total_wrong + wrong,
         lifetime_write_correct: lifetimeWrite,
+        lifetime_revision_clean_correct: lifetimeRevisionClean,
         decks_owned: decksOwned,
         max_deck_level: maxDeckLevel
       };
@@ -351,6 +373,7 @@ router.post('/:id/finish', async (req, res) => {
       };
       const sessionForMedals = {
         mode: s.mode,
+        source: s.source,
         correct, wrong,
         cards_total: cardsTotal,
         max_combo: maxCombo,

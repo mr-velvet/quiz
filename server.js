@@ -11,6 +11,7 @@ const foldersRouter = require('./server/routes/folders');
 const exploreRouter = require('./server/routes/explore');
 const sessionsRouter = require('./server/routes/sessions');
 const statsRouter = require('./server/routes/stats');
+const reviewsRouter = require('./server/routes/reviews');
 const devRouter = require('./server/routes/dev');
 
 const app = express();
@@ -44,6 +45,8 @@ app.use('/api/explore', exploreRouter);
 app.use('/api/sessions', sessionsRouter);
 // statsRouter expõe /me/stats, /me/medals, /me/decks-top, /decks/:id/stats
 app.use('/api', statsRouter);
+// reviewsRouter expõe /cards/:id/review, /decks/:id/review[/count], /me/review-counts
+app.use('/api', reviewsRouter);
 app.use('/api/dev', devRouter);
 
 app.use(express.static(PUBLIC_DIR, {
