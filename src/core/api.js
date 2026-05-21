@@ -68,11 +68,13 @@ export function createDeck({ name, cards = [], isPublic = true, folderId = null 
 }
 
 export function patchDeck(id, fields) {
-  // fields: { name?, isPublic?, folderId? }
+  // fields: { name?, isPublic?, folderId?, langFront?, langBack? }
   const body = {};
   if (fields.name !== undefined) body.name = fields.name;
   if (fields.isPublic !== undefined) body.is_public = fields.isPublic;
   if (fields.folderId !== undefined) body.folder_id = fields.folderId;
+  if (fields.langFront !== undefined) body.lang_front = fields.langFront;
+  if (fields.langBack !== undefined) body.lang_back = fields.langBack;
   return request('PATCH', `/decks/${encodeURIComponent(id)}`, body);
 }
 

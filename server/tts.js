@@ -45,12 +45,36 @@ function publicUrl(hash) {
   return `${ST_BASE}/${gcsObjectPath(hash)}`;
 }
 
+// Cache em memória de hashes que sabemos que já existem no GCS.
+// Evita o HEAD em hits repetidos (50-100ms a menos por chamada).
+const knownHashes = new Map(); // hash -> insertedAt
+const KNOWN_TTL_MS = 6 * 60 * 60 * 1000;
+const KNOWN_MAX = 5000;
+
+function rememberHash(hash) {
+  knownHashes.set(hash, Date.now());
+  if (knownHashes.size > KNOWN_MAX) {
+    const cutoff = Date.now() - KNOWN_TTL_MS;
+    for (const [k, t] of knownHashes) if (t < cutoff) knownHashes.delete(k);
+  }
+}
+
+function isKnown(hash) {
+  const t = knownHashes.get(hash);
+  if (!t) return false;
+  if (Date.now() - t > KNOWN_TTL_MS) { knownHashes.delete(hash); return false; }
+  return true;
+}
+
 // HEAD ao objeto público pra checar cache hit sem precisar de credencial.
 function checkCache(hash) {
+  if (isKnown(hash)) return Promise.resolve(true);
   return new Promise((resolve) => {
     const url = `${GCS_BASE}/${gcsObjectPath(hash)}`;
     const req = https.request(url, { method: 'HEAD', timeout: 5000 }, (res) => {
-      resolve(res.statusCode === 200);
+      const ok = res.statusCode === 200;
+      if (ok) rememberHash(hash);
+      resolve(ok);
       res.resume();
     });
     req.on('error', () => resolve(false));
@@ -206,6 +230,7 @@ async function generateAndStore(text, langCode, voice, hash) {
     audio = await callOpenAITTS(text, voice);
   }
   await uploadToGCS(audio, hash);
+  rememberHash(hash);
   return { url: publicUrl(hash), hash, cached: false, bytes: audio.length };
 }
 

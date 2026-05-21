@@ -3,7 +3,7 @@ import { getDeck, recordCardResult } from '../core/store.js';
 import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
 import { shuffle } from '../core/util.js';
-import { playCardAudio, speakerButton, detectDeckLang, stopAudio } from '../core/audio.js';
+import { playCardAudio, speakerButton, detectDeckLang, stopAudio, prefetchCardAudio } from '../core/audio.js';
 import { startSession } from '../core/sessionLoop.js';
 import { openSessionEndModal } from '../ui/sessionEndModal.js';
 import { floatingXp } from '../ui/xpCounter.js';
@@ -72,6 +72,14 @@ export async function renderFlashcards(root, deckId) {
     rerender();
   }
 
+  function prefetchNeighbors() {
+    // Prepara back da carta atual (vai precisar ao virar) e front da próxima.
+    const cur = cards[i];
+    if (cur) prefetchCardAudio(deckId, cur.id, 'back', deckLang?.back);
+    const next = cards[i + 1];
+    if (next) prefetchCardAudio(deckId, next.id, 'front', deckLang?.front);
+  }
+
   function rerender() {
     stage.innerHTML = '';
     if (i >= cards.length) {
@@ -80,6 +88,7 @@ export async function renderFlashcards(root, deckId) {
       return;
     }
     const card = cards[i];
+    prefetchNeighbors();
     stage.appendChild(el('div', { class: 'fc-counter' }, [`Carta ${i + 1} de ${cards.length} · ${known} sabidas · ${unknown} a revisar`]));
     const cardEl = el('div', { class: 'fc-card' + (flipped ? ' flipped' : ''), onClick: flip, attrs: { 'data-testid': 'fc-card' } }, [
       el('div', { class: 'fc-card-inner' }, [

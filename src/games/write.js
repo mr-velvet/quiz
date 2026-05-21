@@ -1,8 +1,8 @@
-import { el, shuffle, isCloseEnough } from '../core/util.js';
+import { el, shuffle, matchesAnyMeaning, splitMeanings } from '../core/util.js';
 import { getDeck, recordCardResult } from '../core/store.js';
 import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
-import { playCardAudio, speakerButton, detectDeckLang, stopAudio } from '../core/audio.js';
+import { playCardAudio, speakerButton, detectDeckLang, stopAudio, prefetchCardAudio } from '../core/audio.js';
 import { startSession } from '../core/sessionLoop.js';
 import { openSessionEndModal } from '../ui/sessionEndModal.js';
 import { floatingXp } from '../ui/xpCounter.js';
@@ -49,6 +49,16 @@ export async function renderWrite(root, deckId) {
   const stage = el('div', { class: 'stack stack-4' });
   root.appendChild(stage);
 
+  function prefetchNeighbors() {
+    const cur = cards[i];
+    if (cur) {
+      prefetchCardAudio(deckId, cur.id, 'front', deckLang?.front);
+      prefetchCardAudio(deckId, cur.id, 'back',  deckLang?.back);
+    }
+    const next = cards[i + 1];
+    if (next) prefetchCardAudio(deckId, next.id, 'front', deckLang?.front);
+  }
+
   function rerender(state = 'idle', userText = '') {
     stage.innerHTML = '';
     if (i >= cards.length) {
@@ -56,6 +66,7 @@ export async function renderWrite(root, deckId) {
       return;
     }
     const card = cards[i];
+    prefetchNeighbors();
     stage.appendChild(el('div', { class: 'row-between' }, [
       el('div', { class: 'fc-counter' }, [`${i + 1} / ${cards.length}`]),
       el('div', { class: 'row gap-2' }, [
@@ -77,6 +88,11 @@ export async function renderWrite(root, deckId) {
       disabled: locked
     });
 
+    const meanings = splitMeanings(card.back);
+    const acceptedHint = meanings.length > 1
+      ? el('div', { class: 'tiny muted write-feedback-hint' }, [`Aceita: ${meanings.join(' · ')}`])
+      : null;
+
     const feedback = el('div', { class: 'write-feedback' }, [
       state === 'correct' ? 'Certo! +20 XP' :
       state === 'wrong' ? el('span', {}, ['Resposta: ', el('strong', {}, [card.back])]) :
@@ -97,7 +113,7 @@ export async function renderWrite(root, deckId) {
           return;
         }
         const ans = input.value;
-        const ok = isCloseEnough(ans, card.back);
+        const ok = matchesAnyMeaning(ans, card.back);
         recordCardResult(deckId, card.id, ok);
         if (ok) {
           correct++;
@@ -112,7 +128,7 @@ export async function renderWrite(root, deckId) {
         rerender(ok ? 'correct' : 'wrong', ans);
         setTimeout(() => stage.querySelector('input')?.focus(), 30);
       }
-    }, [input, feedback]);
+    }, [input, feedback, state === 'wrong' && acceptedHint ? acceptedHint : null]);
 
     stage.appendChild(form);
     stage.appendChild(el('div', { class: 'row gap-2', style: { justifyContent: 'center' } }, [

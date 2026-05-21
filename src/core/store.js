@@ -392,31 +392,47 @@ export function recordGameScore(deckId, gameKey, score) {
   emit();
 }
 
-// Parse texto importado.
-// Formato padrão: cada linha é um card. Lado A e B separados por TAB.
-// Tolerante a: vários TABs, vírgula+espaço (se sem TAB e sem ; ), ponto-e-vírgula.
-// Detecta separador automaticamente examinando a primeira linha não vazia.
-export function parseImport(text, sepHint = 'auto') {
+// Parse texto importado em uma estrutura intermediária (linhas x colunas).
+// Use parseImportTable() pra ter acesso a todas as colunas; use parseImport()
+// pra retorno simplificado de cartas (front/back) já materializadas.
+//
+// `sepHint`: 'auto' | '\t' | ',' | ';' | ' - '
+// Em 'auto', a primeira linha não vazia escolhe o separador.
+export function detectSeparator(text) {
+  if (!text) return '\t';
+  const sample = (text.split(/\r?\n/).find(l => l.trim()) || '');
+  if (sample.includes('\t')) return '\t';
+  if (sample.includes(';')) return ';';
+  if (/ - /.test(sample)) return ' - ';
+  if (sample.includes(',')) return ',';
+  return '\t';
+}
+
+export function parseImportTable(text, sepHint = 'auto') {
+  if (!text) return { sep: '\t', rows: [], colCount: 0 };
+  const lines = text.split(/\r?\n/).map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+  if (!lines.length) return { sep: '\t', rows: [], colCount: 0 };
+
+  const sep = sepHint === 'auto' ? detectSeparator(text) : sepHint;
+  let colCount = 0;
+  const rows = lines.map(line => {
+    const cells = line.split(sep).map(c => c.trim());
+    if (cells.length > colCount) colCount = cells.length;
+    return cells;
+  });
+  return { sep, rows, colCount };
+}
+
+// Mantém API histórica. Aceita sepHint OU objeto { sep, frontCol, backCol }.
+export function parseImport(text, opts = 'auto') {
   if (!text) return [];
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (!lines.length) return [];
-
-  let sep = sepHint;
-  if (sep === 'auto') {
-    const sample = lines[0];
-    if (sample.includes('\t')) sep = '\t';
-    else if (sample.includes(';')) sep = ';';
-    else if (/ - /.test(sample)) sep = ' - ';
-    else if (sample.includes(',')) sep = ',';
-    else sep = '\t';
-  }
-
+  const cfg = typeof opts === 'string' ? { sep: opts } : (opts || {});
+  const { sep = 'auto', frontCol = 0, backCol = 1 } = cfg;
+  const { rows } = parseImportTable(text, sep);
   const cards = [];
-  for (const line of lines) {
-    const idx = line.indexOf(sep);
-    if (idx === -1) continue;
-    const front = line.slice(0, idx).trim();
-    const back = line.slice(idx + sep.length).trim();
+  for (const cells of rows) {
+    const front = (cells[frontCol] || '').trim();
+    const back = (cells[backCol] || '').trim();
     if (front && back) cards.push({ front, back });
   }
   return cards;

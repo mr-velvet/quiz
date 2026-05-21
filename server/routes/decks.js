@@ -11,6 +11,7 @@
 
 const { Router } = require('express');
 const { query, withTx, isAvailable } = require('../db');
+const { detectDeckLangs } = require('../langDetect');
 
 const router = Router();
 
@@ -79,7 +80,9 @@ function mapDeckRow(row, currentUserId) {
     clonedAt: row.cloned_at,
     sourceName: row.source_name || undefined,
     cloneCount: row.clone_count != null ? Number(row.clone_count) : undefined,
-    cardCount: row.card_count != null ? Number(row.card_count) : undefined
+    cardCount: row.card_count != null ? Number(row.card_count) : undefined,
+    langFront: row.lang_front || null,
+    langBack: row.lang_back || null
   };
   // Atribuição "baseado em X" só aparece por 30 dias após clone.
   if (row.cloned_at) {
@@ -111,7 +114,7 @@ router.get('/', async (req, res) => {
   try {
     const r = await query(
       `SELECT d.id, d.owner_id, d.name, d.is_public, d.folder_id, d.created_at, d.updated_at,
-              d.records, d.source_deck_id, d.cloned_at,
+              d.records, d.source_deck_id, d.cloned_at, d.lang_front, d.lang_back,
               src.name AS source_name,
               (SELECT count(*) FROM cards c WHERE c.deck_id = d.id) AS card_count
        FROM decks d
@@ -158,16 +161,17 @@ router.post('/', async (req, res) => {
       if (!f.rows[0]) return res.status(400).json({ error: 'invalid_folder_id' });
     }
 
+    const langs = cards.length ? detectDeckLangs(cards) : { front: null, back: null };
+
     const result = await withTx(async (client) => {
       const dr = await client.query(
-        `INSERT INTO decks (owner_id, name, is_public, folder_id)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, owner_id, name, is_public, folder_id, created_at, updated_at, records, source_deck_id, cloned_at`,
-        [req.user.id, name, isPublic, folderId]
+        `INSERT INTO decks (owner_id, name, is_public, folder_id, lang_front, lang_back)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, owner_id, name, is_public, folder_id, created_at, updated_at, records, source_deck_id, cloned_at, lang_front, lang_back`,
+        [req.user.id, name, isPublic, folderId, langs.front, langs.back]
       );
       const deck = dr.rows[0];
       if (cards.length) {
-        // Insert múltiplo via UNNEST: mais barato que N inserts.
         const fronts = cards.map(c => c.front);
         const backs = cards.map(c => c.back);
         const positions = cards.map((_, i) => i);
@@ -202,6 +206,7 @@ router.get('/:id', async (req, res) => {
     const r = await query(
       `SELECT d.id, d.owner_id, d.name, d.is_public, d.folder_id, d.created_at, d.updated_at,
               d.records, d.source_deck_id, d.cloned_at, d.removed_by_admin,
+              d.lang_front, d.lang_back,
               src.name AS source_name
        FROM decks d
        LEFT JOIN decks src ON src.id = d.source_deck_id
@@ -262,6 +267,14 @@ router.patch('/:id', async (req, res) => {
     }
     params.push(body.folder_id || null); updates.push(`folder_id = $${params.length}`);
   }
+  if (body.lang_front !== undefined) {
+    const v = body.lang_front ? String(body.lang_front).slice(0, 5).toLowerCase() : null;
+    params.push(v); updates.push(`lang_front = $${params.length}`);
+  }
+  if (body.lang_back !== undefined) {
+    const v = body.lang_back ? String(body.lang_back).slice(0, 5).toLowerCase() : null;
+    params.push(v); updates.push(`lang_back = $${params.length}`);
+  }
 
   if (!updates.length) return res.status(400).json({ error: 'no_fields' });
 
@@ -285,7 +298,7 @@ router.patch('/:id', async (req, res) => {
     params.push(id);
     const r = await query(
       `UPDATE decks SET ${updates.join(', ')} WHERE id = $${params.length}
-       RETURNING id, owner_id, name, is_public, folder_id, created_at, updated_at, records, source_deck_id, cloned_at`,
+       RETURNING id, owner_id, name, is_public, folder_id, created_at, updated_at, records, source_deck_id, cloned_at, lang_front, lang_back`,
       params
     );
     res.json(mapDeckRow(r.rows[0], req.user.id));
@@ -333,7 +346,7 @@ router.post('/:id/clone', async (req, res) => {
     }
 
     const sr = await query(
-      `SELECT id, owner_id, name, is_public, removed_by_admin
+      `SELECT id, owner_id, name, is_public, removed_by_admin, lang_front, lang_back
        FROM decks WHERE id = $1 AND deleted_at IS NULL`,
       [id]
     );
@@ -352,10 +365,10 @@ router.post('/:id/clone', async (req, res) => {
 
     const cloned = await withTx(async (client) => {
       const dr = await client.query(
-        `INSERT INTO decks (owner_id, name, is_public, source_deck_id, cloned_at)
-         VALUES ($1, $2, TRUE, $3, now())
-         RETURNING id, owner_id, name, is_public, folder_id, created_at, updated_at, records, source_deck_id, cloned_at`,
-        [req.user.id, src.name, src.id]
+        `INSERT INTO decks (owner_id, name, is_public, source_deck_id, cloned_at, lang_front, lang_back)
+         VALUES ($1, $2, TRUE, $3, now(), $4, $5)
+         RETURNING id, owner_id, name, is_public, folder_id, created_at, updated_at, records, source_deck_id, cloned_at, lang_front, lang_back`,
+        [req.user.id, src.name, src.id, src.lang_front, src.lang_back]
       );
       const newDeck = dr.rows[0];
       // Snapshot dos cards (front/back/position/audio — stats reseta).
@@ -391,10 +404,11 @@ router.post('/:id/cards', async (req, res) => {
 
   try {
     const dr = await query(
-      'SELECT id FROM decks WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL',
+      'SELECT id, lang_front, lang_back FROM decks WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL',
       [id, req.user.id]
     );
     if (!dr.rows[0]) return res.status(404).json({ error: 'not_found' });
+    const deckRow = dr.rows[0];
 
     const cntR = await query('SELECT count(*)::int AS n, COALESCE(max(position), -1)::int AS lastpos FROM cards WHERE deck_id = $1', [id]);
     const existing = cntR.rows[0].n;
@@ -415,7 +429,21 @@ router.post('/:id/cards', async (req, res) => {
       [id, fronts, backs, positions]
     );
 
-    await query('UPDATE decks SET updated_at = now() WHERE id = $1', [id]);
+    if (!deckRow.lang_front || !deckRow.lang_back) {
+      const langs = detectDeckLangs(cards);
+      const newFront = deckRow.lang_front || langs.front;
+      const newBack  = deckRow.lang_back  || langs.back;
+      if (newFront || newBack) {
+        await query(
+          'UPDATE decks SET lang_front = COALESCE(lang_front, $2), lang_back = COALESCE(lang_back, $3), updated_at = now() WHERE id = $1',
+          [id, newFront, newBack]
+        );
+      } else {
+        await query('UPDATE decks SET updated_at = now() WHERE id = $1', [id]);
+      }
+    } else {
+      await query('UPDATE decks SET updated_at = now() WHERE id = $1', [id]);
+    }
 
     res.status(201).json({ cards: ir.rows.map(mapCardRow) });
   } catch (e) {

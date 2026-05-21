@@ -2,8 +2,9 @@ import { el } from '../core/util.js';
 import {
   getDeck, fetchDeck, deleteDeck, renameDeck, addCards,
   setDeckVisibility, moveDeckToFolder, cloneDeck,
-  listFolders, createFolder, parseImport
+  listFolders, createFolder
 } from '../core/store.js';
+import { importPicker } from './importPicker.js';
 import * as api from '../core/api.js';
 import { topbar } from './topbar.js';
 import { openModal, confirmModal } from './modal.js';
@@ -374,27 +375,21 @@ async function onDelete(deck) {
 }
 
 async function openAddCards(deckId) {
-  const ta = el('textarea', {
-    class: 'textarea',
-    placeholder: 'Cole linhas no formato frente⇥verso'
+  const picker = importPicker({
+    placeholder: 'Cole linhas no formato frente\tverso'
   });
-  const preview = el('div', { class: 'tiny muted' }, ['0 cartas']);
-  ta.addEventListener('input', () => {
-    const cards = parseImport(ta.value);
-    preview.textContent = `${cards.length} cartas`;
-  });
-  setTimeout(() => ta.focus(), 50);
+  setTimeout(() => picker.focus(), 50);
 
   const ok = await openModal({
     title: 'Adicionar cartas',
-    content: el('div', { class: 'stack stack-2' }, [preview, ta]),
+    content: picker.node,
     actions: [
       { label: 'Cancelar', value: false },
       { label: 'Adicionar', value: true, variant: 'primary' }
     ]
   });
   if (!ok) return;
-  const cards = parseImport(ta.value);
+  const cards = picker.getCards();
   if (!cards.length) return;
   try {
     await addCards(deckId, cards);

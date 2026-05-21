@@ -59,6 +59,30 @@ export function isCloseEnough(input, target) {
   return d <= tolerance;
 }
 
+// Quebra o "verso" de um card em significados aceitáveis.
+// Línguas costumam ter sinônimos separados por vírgula/ponto-e-vírgula/barra.
+// Parênteses no fim (ex.: "library (place)") são tratados como anotação e ignorados
+// na comparação, mas a string completa segue sendo mostrada na UI.
+export function splitMeanings(back) {
+  if (!back) return [];
+  const stripped = String(back).replace(/\([^)]*\)/g, ' ').trim();
+  const parts = stripped
+    .split(/[,;/|]/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (!parts.length) return [String(back).trim()];
+  return parts;
+}
+
+// Verifica acerto contra qualquer significado aceitável do card.back.
+export function matchesAnyMeaning(input, back) {
+  const candidates = splitMeanings(back);
+  for (const c of candidates) {
+    if (isCloseEnough(input, c)) return true;
+  }
+  return false;
+}
+
 export function fmtTime(ms) {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);

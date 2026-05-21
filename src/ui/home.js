@@ -1,6 +1,6 @@
 import { el } from '../core/util.js';
 import {
-  listDecks, listFolders, createDeck, createFolder, parseImport
+  listDecks, listFolders, createDeck, createFolder
 } from '../core/store.js';
 import { topbar } from './topbar.js';
 import { openModal } from './modal.js';
@@ -10,6 +10,7 @@ import { toggle } from './toggle.js';
 import { dropdown } from './dropdown.js';
 import { iconLock } from './icons.js';
 import { deckGridSkeleton } from './skeleton.js';
+import { importPicker } from './importPicker.js';
 
 export function renderHome(root, { folderFilter = null } = {}) {
   root.appendChild(topbar());
@@ -119,23 +120,8 @@ async function openCreate() {
     placeholder: 'Nome do deck (ex.: Verbos irregulares)',
     attrs: { 'data-testid': 'deck-name' }
   });
-  const textarea = el('textarea', {
-    class: 'textarea',
-    placeholder: 'exemplo\texample\nbiblioteca\tlibrary\nfoguete\trocket',
-    attrs: { 'data-testid': 'deck-text' }
-  });
-  const preview = el('div', { class: 'tiny muted' }, ['0 cartas detectadas']);
-  const example = el('div', { class: 'tiny muted', style: { lineHeight: '1.5' } }, [
-    'Cada linha vira uma carta. Separadores aceitos automaticamente: ',
-    el('span', { class: 'kbd' }, ['Tab']), ' ',
-    el('span', { class: 'kbd' }, [';']), ' ',
-    el('span', { class: 'kbd' }, [' - ']), '. ',
-    'Se você copia direto do Quizlet ou de uma planilha, funciona.'
-  ]);
-
-  textarea.addEventListener('input', () => {
-    const cards = parseImport(textarea.value);
-    preview.textContent = `${cards.length} carta${cards.length === 1 ? '' : 's'} detectada${cards.length === 1 ? '' : 's'}`;
+  const picker = importPicker({
+    placeholder: 'exemplo\texample\nbiblioteca\tlibrary\nfoguete\trocket'
   });
 
   // Toggle visibilidade — default ON (Público).
@@ -203,14 +189,7 @@ async function openCreate() {
       el('div', { class: 'label' }, ['Nome']),
       nameInput
     ]),
-    el('div', { class: 'stack stack-2' }, [
-      el('div', { class: 'row-between' }, [
-        el('div', { class: 'label' }, ['Cartas']),
-        preview
-      ]),
-      textarea,
-      example
-    ]),
+    picker.node,
     visibilityRow
   ]);
 
@@ -226,7 +205,7 @@ async function openCreate() {
   });
   if (!ok) return;
 
-  const cards = parseImport(textarea.value);
+  const cards = picker.getCards();
   if (cards.length === 0) {
     await openModal({
       title: 'Sem cartas',

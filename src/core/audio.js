@@ -2,7 +2,7 @@
 // toca via <audio> compartilhado.
 
 import { getDeck } from './store.js';
-import { setCardAudio } from './api.js';
+import { setCardAudio, patchDeck } from './api.js';
 
 const audioEl = new Audio();
 audioEl.preload = 'auto';
@@ -50,15 +50,47 @@ export function detectLang(text) {
   return best[0];
 }
 
-// Pega o idioma representativo do deck inteiro (concatena tudo).
+// Idioma do deck: agora o backend já entrega em deck.langFront/langBack
+// (detecção 1× por deck na criação). Esse helper só dá fallback pra decks
+// antigos ou casos em que o backend ainda não armazenou nada.
+//
+// Quando o backend não tem ainda e o cliente conseguiu detectar, dispara
+// um PATCH lazy de backfill (só pra dono — backend devolve 404 silencioso
+// pra deck público de outro, que é ignorado).
+const lazyBackfilled = new Set();
+
 export function detectDeckLang(deck) {
-  if (!deck || !deck.cards) return null;
-  const sampleFront = deck.cards.slice(0, 10).map(c => c.front).join(' ');
-  const sampleBack = deck.cards.slice(0, 10).map(c => c.back).join(' ');
-  return {
-    front: detectLang(sampleFront),
-    back: detectLang(sampleBack)
+  if (!deck) return { front: null, back: null };
+  const fromBackend = {
+    front: deck.langFront || null,
+    back:  deck.langBack  || null
   };
+  if (fromBackend.front && fromBackend.back) return fromBackend;
+  if (!deck.cards) return fromBackend;
+  const sampleFront = deck.cards.slice(0, 10).map(c => c.front).join(' ');
+  const sampleBack  = deck.cards.slice(0, 10).map(c => c.back).join(' ');
+  const result = {
+    front: fromBackend.front || detectLang(sampleFront),
+    back:  fromBackend.back  || detectLang(sampleBack)
+  };
+  if (deck.isMine && !lazyBackfilled.has(deck.id) && (result.front || result.back)) {
+    lazyBackfilled.add(deck.id);
+    const payload = {};
+    if (!fromBackend.front && result.front) payload.langFront = result.front;
+    if (!fromBackend.back  && result.back)  payload.langBack  = result.back;
+    if (Object.keys(payload).length) {
+      patchDeck(deck.id, payload).then(updated => {
+        const fresh = getDeck(deck.id);
+        if (fresh) {
+          if (updated.langFront) fresh.langFront = updated.langFront;
+          if (updated.langBack)  fresh.langBack  = updated.langBack;
+        }
+      }).catch(() => {
+        lazyBackfilled.delete(deck.id);
+      });
+    }
+  }
+  return result;
 }
 
 // --- TTS ---------------------------------------------------------------
@@ -98,7 +130,10 @@ export async function playCardAudio(deckId, cardId, side, langHint) {
   }
 
   const myToken = ++requestToken;
-  const lang = langHint || (card.audio?.[side]?.lang) || detectLang(text);
+  // Ordem de preferência: hint explícito > idioma do deck (persistido) > cache
+  // do próprio card > detecção heurística no texto.
+  const deckLang = side === 'front' ? deck.langFront : deck.langBack;
+  const lang = langHint || deckLang || (card.audio?.[side]?.lang) || detectLang(text);
   let entry = card.audio?.[side];
 
   if (!entry || !entry.url || entry.lang !== lang) {
@@ -149,6 +184,50 @@ export function stopAudio() {
   audioEl.pause();
   audioEl.currentTime = 0;
   currentlyPlayingKey = null;
+}
+
+// Pré-busca a URL do áudio sem tocar.
+// Modos chamam isso pra próxima carta enquanto o user ainda está na atual —
+// quando o user pressionar play, a URL já está no cache do card.
+//
+// Garante apenas 1 in-flight por (cardId, side) e nunca quebra fluxo principal.
+const prefetchInFlight = new Set();
+
+export function prefetchCardAudio(deckId, cardId, side, langHint) {
+  if (!deckId || !cardId || !side) return;
+  const key = `${cardId}:${side}`;
+  if (prefetchInFlight.has(key)) return;
+  const deck = getDeck(deckId);
+  if (!deck) return;
+  const card = deck.cards.find(c => c.id === cardId);
+  if (!card) return;
+  if (card.audio?.[side]?.url) return;
+  const text = side === 'front' ? card.front : card.back;
+  if (!text) return;
+  const deckLang = side === 'front' ? deck.langFront : deck.langBack;
+  const lang = langHint || deckLang || detectLang(text);
+
+  prefetchInFlight.add(key);
+  fetchTTS(text, lang).then(res => {
+    const entry = { url: res.url, lang, hash: res.hash, generatedAt: Date.now() };
+    const fresh = getDeck(deckId);
+    if (fresh) {
+      const freshCard = fresh.cards.find(c => c.id === cardId);
+      if (freshCard) {
+        freshCard.audio = freshCard.audio || {};
+        if (!freshCard.audio[side]?.url) freshCard.audio[side] = entry;
+      }
+    }
+    setCardAudio(cardId, side, entry).catch(() => {});
+    // Hint pro browser pré-buscar bytes (não toca).
+    try {
+      const a = new Audio();
+      a.preload = 'auto';
+      a.src = entry.url;
+    } catch {}
+  }).catch(() => {}).finally(() => {
+    prefetchInFlight.delete(key);
+  });
 }
 
 // Cria o botão speaker padrão pros modos. Recebe callback async que toca o áudio.

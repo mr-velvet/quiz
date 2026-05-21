@@ -1754,3 +1754,38 @@ a:hover { text-decoration: underline; }
 .folder-row-name { font-weight: 500; }
 .folder-row-count { font-size: 12px; color: var(--text-mute); }
 
+/* ----- Import picker ----- */
+.import-picker .import-sep-row {
+  padding: 4px 0;
+}
+.import-picker .import-sep-row .btn.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.import-col-selector {
+  background: var(--bg-elev-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.import-col-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.import-col-label {
+  min-width: 48px;
+  color: var(--text-mute);
+}
+.import-col-btn {
+  padding: 3px 10px !important;
+  font-size: 12px !important;
+}
+.write-feedback-hint {
+  margin-top: 4px;
+}
+

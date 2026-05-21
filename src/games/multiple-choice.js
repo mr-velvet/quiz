@@ -2,7 +2,7 @@ import { el, shuffle, pickRandom } from '../core/util.js';
 import { getDeck, recordCardResult } from '../core/store.js';
 import { topbar } from '../ui/topbar.js';
 import { go, replay, registerCleanup } from '../ui/router.js';
-import { playCardAudio, speakerButton, detectDeckLang, stopAudio } from '../core/audio.js';
+import { playCardAudio, speakerButton, detectDeckLang, stopAudio, prefetchCardAudio } from '../core/audio.js';
 import { startSession } from '../core/sessionLoop.js';
 import { openSessionEndModal } from '../ui/sessionEndModal.js';
 import { floatingXp } from '../ui/xpCounter.js';
@@ -92,10 +92,18 @@ export async function renderMultipleChoice(root, deckId) {
     });
   }
 
+  function prefetchNext() {
+    const cur = cards[i];
+    if (cur) prefetchCardAudio(deckId, cur.id, 'front', deckLang?.front);
+    const next = cards[i + 1];
+    if (next) prefetchCardAudio(deckId, next.id, 'front', deckLang?.front);
+  }
+
   function rerender(selectedIdx = -1) {
     stage.innerHTML = '';
     if (i >= cards.length) return; // já iniciou finishSession
     const card = cards[i];
+    prefetchNext();
     stage.appendChild(el('div', { class: 'row-between' }, [
       el('div', { class: 'fc-counter' }, [`${i + 1} / ${cards.length}`]),
       el('div', { class: 'row gap-2' }, [
