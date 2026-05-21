@@ -397,26 +397,103 @@ export function recordGameScore(deckId, gameKey, score) {
 // pra retorno simplificado de cartas (front/back) já materializadas.
 //
 // `sepHint`: 'auto' | '\t' | ',' | ';' | ' - '
-// Em 'auto', a primeira linha não vazia escolhe o separador.
+// Em 'auto', analisamos as primeiras N linhas e escolhemos o separador que
+// aparece de forma mais CONSISTENTE entre linhas (heurística melhor que olhar
+// só a primeira linha — protege contra cabeçalhos atípicos e células com
+// vírgulas internas).
+
+const SEP_CANDIDATES = ['\t', ';', ' - ', ','];
+
+// Limpa whitespace Unicode chato (NBSP, zero-width, BOM no início) sem mexer
+// em conteúdo útil. Mantém espaços comuns intactos pra não juntar palavras.
+function cleanText(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/^﻿/, '')
+    .replace(/ /g, ' ')
+    .replace(/[​-‍⁠]/g, '');
+}
+
+function countOccurrences(line, sep) {
+  if (sep === ' - ') {
+    const m = line.match(/ - /g);
+    return m ? m.length : 0;
+  }
+  let n = 0;
+  for (let i = 0; i < line.length; i++) if (line[i] === sep) n++;
+  return n;
+}
+
 export function detectSeparator(text) {
   if (!text) return '\t';
-  const sample = (text.split(/\r?\n/).find(l => l.trim()) || '');
-  if (sample.includes('\t')) return '\t';
-  if (sample.includes(';')) return ';';
-  if (/ - /.test(sample)) return ' - ';
-  if (sample.includes(',')) return ',';
-  return '\t';
+  const lines = cleanText(text)
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  if (!lines.length) return '\t';
+
+  // Score = média de ocorrências por linha que CONTÊM o separador. Empate vai
+  // pra ordem de preferência (tab > ; > " - " > ,) — tab é o que vem de
+  // Quizlet/Excel/Sheets na maioria das colagens reais.
+  let best = '\t';
+  let bestScore = 0;
+  for (const sep of SEP_CANDIDATES) {
+    let total = 0;
+    let withSep = 0;
+    for (const l of lines) {
+      const n = countOccurrences(l, sep);
+      if (n > 0) { total += n; withSep++; }
+    }
+    if (!withSep) continue;
+    // Preferimos separador que aparece na maioria das linhas: pondera presença.
+    const score = (withSep / lines.length) * 100 + (total / lines.length);
+    if (score > bestScore) { bestScore = score; best = sep; }
+  }
+  return best;
+}
+
+// Split de linha que respeita aspas duplas (CSV-style) — apenas pra
+// separadores de 1 char (`,` `;` `\t`). Pra " - " usa split bruto.
+function splitLine(line, sep) {
+  if (sep === ' - ') return line.split(' - ');
+  if (sep.length !== 1) return line.split(sep);
+  // Só vale a pena ativar o modo CSV se houver aspas duplas balanceadas.
+  // Fora isso, split bruto é mais rápido e dá o mesmo resultado.
+  if (!line.includes('"')) return line.split(sep);
+  const out = [];
+  let cur = '';
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += ch;
+    } else {
+      if (ch === '"') inQ = true;
+      else if (ch === sep) { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
 }
 
 export function parseImportTable(text, sepHint = 'auto') {
   if (!text) return { sep: '\t', rows: [], colCount: 0 };
-  const lines = text.split(/\r?\n/).map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+  const cleaned = cleanText(text);
+  const lines = cleaned
+    .split(/\r?\n/)
+    .map(l => l.replace(/\s+$/, ''))
+    .filter(l => l.trim());
   if (!lines.length) return { sep: '\t', rows: [], colCount: 0 };
 
-  const sep = sepHint === 'auto' ? detectSeparator(text) : sepHint;
+  const sep = sepHint === 'auto' ? detectSeparator(cleaned) : sepHint;
   let colCount = 0;
   const rows = lines.map(line => {
-    const cells = line.split(sep).map(c => c.trim());
+    const cells = splitLine(line, sep).map(c => c.trim());
     if (cells.length > colCount) colCount = cells.length;
     return cells;
   });
@@ -430,9 +507,13 @@ export function parseImport(text, opts = 'auto') {
   const { sep = 'auto', frontCol = 0, backCol = 1 } = cfg;
   const { rows } = parseImportTable(text, sep);
   const cards = [];
+  // Guarda extra: ignorar índices inválidos silenciosamente (defensivo —
+  // o picker já clampa, mas chamadas legadas podem passar valores ruins).
+  const fc = frontCol >= 0 ? frontCol : 0;
+  const bc = backCol >= 0 ? backCol : 1;
   for (const cells of rows) {
-    const front = (cells[frontCol] || '').trim();
-    const back = (cells[backCol] || '').trim();
+    const front = (cells[fc] || '').trim();
+    const back = (cells[bc] || '').trim();
     if (front && back) cards.push({ front, back });
   }
   return cards;

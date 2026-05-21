@@ -24,6 +24,9 @@ export function importPicker({ placeholder, initialText = '' } = {}) {
   let sep = 'auto';
   let frontCol = 0;
   let backCol = 1;
+  // Quando o usuário troca manualmente uma coluna, paramos de auto-corrigir nas
+  // próximas mudanças de texto — pra não sobrescrever a escolha enquanto digita.
+  let userTouchedCols = false;
 
   const sepRow = el('div', { class: 'row gap-2 import-sep-row', style: { flexWrap: 'wrap', alignItems: 'center' } });
   const sepLabel = el('span', { class: 'tiny muted' }, ['Separador:']);
@@ -77,6 +80,7 @@ export function importPicker({ placeholder, initialText = '' } = {}) {
         onClick: () => {
           if (backCol === i) backCol = frontCol;
           frontCol = i;
+          userTouchedCols = true;
           buildColSelector(colCount);
           recompute();
         }
@@ -95,6 +99,7 @@ export function importPicker({ placeholder, initialText = '' } = {}) {
         onClick: () => {
           if (frontCol === i) frontCol = backCol;
           backCol = i;
+          userTouchedCols = true;
           buildColSelector(colCount);
           recompute();
         }
@@ -107,18 +112,43 @@ export function importPicker({ placeholder, initialText = '' } = {}) {
   function recompute() {
     const text = textarea.value;
     const table = parseImportTable(text, sep);
-    detectedSepBadge.textContent = sep === 'auto'
+    detectedSepBadge.textContent = sep === 'auto' && text
       ? `(detectado: ${labelSep(detectSeparator(text))})`
       : '';
-    if (frontCol >= table.colCount) frontCol = 0;
-    if (backCol >= table.colCount) backCol = Math.min(1, table.colCount - 1);
-    if (backCol === frontCol && table.colCount >= 2) {
-      backCol = frontCol === 0 ? 1 : 0;
+
+    // Normalização de colunas: nunca deixar valor < 0 (esse era o bug que
+    // zerava o contador silenciosamente quando colCount=0). Se o usuário
+    // ainda não tocou nos botões, voltar pro default 0/1 quando válido;
+    // senão clampar pro range válido preservando a intenção do usuário.
+    const cc = table.colCount;
+    if (cc >= 2) {
+      if (!userTouchedCols) {
+        frontCol = 0;
+        backCol = 1;
+      } else {
+        if (frontCol < 0 || frontCol >= cc) frontCol = 0;
+        if (backCol < 0 || backCol >= cc) backCol = (frontCol === 0 ? 1 : 0);
+        if (frontCol === backCol) backCol = frontCol === 0 ? 1 : 0;
+      }
     }
-    buildColSelector(table.colCount);
+    // Quando cc < 2, mantemos os valores anteriores (válidos) — não há
+    // seleção visual exposta, então não há divergência percebida.
+
+    buildColSelector(cc);
 
     const cards = parseImport(text, { sep, frontCol, backCol });
-    previewBadge.textContent = `${cards.length} carta${cards.length === 1 ? '' : 's'}`;
+    const n = cards.length;
+    let badge = `${n} carta${n === 1 ? '' : 's'}`;
+    // Feedback claro quando há linhas mas elas não viram cartas — quase
+    // sempre porque o separador detectado está errado pro conteúdo.
+    if (n === 0 && table.rows.length > 0) {
+      if (cc < 2) {
+        badge += ' · verifique o separador';
+      } else {
+        badge += ' · linhas inválidas';
+      }
+    }
+    previewBadge.textContent = badge;
   }
 
   function labelSep(s) {

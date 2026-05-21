@@ -114,14 +114,16 @@ export function renderHomeLoading(root) {
   ]));
 }
 
-async function openCreate() {
+async function openCreate({ initialName = '', initialText = '' } = {}) {
   const nameInput = el('input', {
     class: 'input',
     placeholder: 'Nome do deck (ex.: Verbos irregulares)',
-    attrs: { 'data-testid': 'deck-name' }
+    attrs: { 'data-testid': 'deck-name' },
+    value: initialName
   });
   const picker = importPicker({
-    placeholder: 'exemplo\texample\nbiblioteca\tlibrary\nfoguete\trocket'
+    placeholder: 'exemplo\texample\nbiblioteca\tlibrary\nfoguete\trocket',
+    initialText
   });
 
   // Toggle visibilidade — default ON (Público).
@@ -207,12 +209,16 @@ async function openCreate() {
 
   const cards = picker.getCards();
   if (cards.length === 0) {
+    const text = picker.getText();
+    const hasContent = text && text.trim().length > 0;
     await openModal({
       title: 'Sem cartas',
-      content: 'Cole pelo menos uma linha no formato "frente⇥verso" (TAB entre os lados).',
+      content: hasContent
+        ? 'Nenhuma linha tem frente e verso. Verifique o separador (Tab, Vírgula, …) ou — se tiver mais de 2 colunas — escolha quais usar como frente e verso.'
+        : 'Cole pelo menos uma linha com frente e verso (ex.: "hello⇥olá").',
       actions: [{ label: 'OK', value: true }]
     });
-    return openCreate();
+    return openCreate({ initialName: nameInput.value, initialText: text });
   }
   try {
     const deck = await createDeck({
@@ -225,10 +231,32 @@ async function openCreate() {
   } catch (e) {
     await openModal({
       title: 'Erro ao criar',
-      content: e && e.message ? e.message : 'Tente de novo.',
+      content: humanizeApiError(e),
       actions: [{ label: 'OK', value: true }]
     });
+    // Preserva o que o usuário digitou pra ele poder tentar de novo sem perder tudo.
+    return openCreate({ initialName: nameInput.value, initialText: picker.getText() });
   }
+}
+
+// Traduz códigos de erro do backend (api.js → ApiError com .code) pra mensagens
+// úteis em pt-BR. Fallback no .message bruto pra erros que ainda não mapeamos.
+function humanizeApiError(e) {
+  if (!e) return 'Tente de novo.';
+  const code = e.code || '';
+  const map = {
+    'name_required': 'Dê um nome ao deck antes de criar.',
+    'rate_limit_decks_per_day': 'Você atingiu o limite diário de criação de decks. Tente de novo amanhã.',
+    'too_many_cards': 'Esse deck tem cartas demais (máximo 2000 por deck).',
+    'no_cards': 'Nenhuma carta válida foi enviada.',
+    'invalid_folder_id': 'Pasta inválida. Tente sem pasta ou selecione outra.',
+    'network': 'Sem conexão. Verifique sua internet e tente de novo.',
+    'no_user': 'Sessão expirada. Recarregue a página.',
+    'db_unavailable': 'Banco de dados temporariamente indisponível. Tente em alguns segundos.',
+    'internal': 'Erro no servidor. Tente de novo.'
+  };
+  if (map[code]) return map[code];
+  return e.message || 'Tente de novo.';
 }
 
 // Mini modal pra capturar texto (usado pra "+ Nova pasta…" dentro do dropdown).

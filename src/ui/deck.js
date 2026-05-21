@@ -382,9 +382,10 @@ async function onDelete(deck) {
   }
 }
 
-async function openAddCards(deckId) {
+async function openAddCards(deckId, { initialText = '' } = {}) {
   const picker = importPicker({
-    placeholder: 'Cole linhas no formato frente\tverso'
+    placeholder: 'Cole linhas no formato frente\tverso',
+    initialText
   });
   setTimeout(() => picker.focus(), 50);
 
@@ -398,11 +399,22 @@ async function openAddCards(deckId) {
   });
   if (!ok) return;
   const cards = picker.getCards();
-  if (!cards.length) return;
+  if (!cards.length) {
+    const text = picker.getText();
+    const hasContent = text && text.trim().length > 0;
+    await openModal({
+      title: 'Sem cartas',
+      content: hasContent
+        ? 'Nenhuma linha tem frente e verso. Verifique o separador (Tab, Vírgula, …) ou — se tiver mais de 2 colunas — escolha quais usar como frente e verso.'
+        : 'Cole pelo menos uma linha com frente e verso.',
+      actions: [{ label: 'OK', value: true }]
+    });
+    return openAddCards(deckId, { initialText: text });
+  }
   try {
     await addCards(deckId, cards);
-  } catch {
-    toast('Erro ao adicionar.', { kind: 'error' });
+  } catch (e) {
+    toast(e && e.message ? `Erro: ${e.message}` : 'Erro ao adicionar.', { kind: 'error' });
   }
 }
 
