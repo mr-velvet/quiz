@@ -38,6 +38,13 @@ export async function renderWrite(root, deckId) {
       }
       return;
     }
+    // Quando o input está disabled (estado locked), o keydown não vai pra ele
+    // — captura Enter aqui pra avançar pra próxima carta.
+    if (e.key === 'Enter' && locked) {
+      e.preventDefault();
+      i++; locked = false; rerender();
+      return;
+    }
     if (e.key === 's' || e.key === 'S') {
       e.preventDefault();
       (locked ? playAnswer() : playPrompt()).catch(() => {});
@@ -86,7 +93,16 @@ export async function renderWrite(root, deckId) {
       placeholder: 'Sua resposta…',
       attrs: { 'data-testid': 'write-input', autocomplete: 'off', spellcheck: 'false' },
       value: userText,
-      disabled: locked
+      disabled: locked,
+      onKeyDown: (e) => {
+        // Enter avança o jogo, seja submetendo a resposta ou indo pra próxima
+        // carta no estado locked. Tratamos aqui em vez de depender do implicit
+        // submission do form, que falha quando o input está disabled.
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { cancelable: true }));
+        }
+      }
     });
 
     const meanings = splitMeanings(card.back);
