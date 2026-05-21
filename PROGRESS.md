@@ -1,6 +1,6 @@
 # Flashy (quiz) — Progresso
 
-Última atualização: 2026-05-21 (sprint 5 — cards-pra-revisão + menu contextual + TTS Google)
+Última atualização: 2026-05-21 (hotfix importação — backCol=-1 zerava cards silenciosamente)
 
 > **Antes de qualquer trabalho neste repo, ler `CONCEPTS.md`** — visão de produto,
 > princípios e decisões estratégicas. Este arquivo aqui é o estado operacional.
@@ -38,7 +38,46 @@
 ### Sprint 4 — Gamificação ✅
 ### Sprint 4.5 — Ajustes pós-gamificação ✅
 ### Sprint 4.6 — Correção ao final ✅
-### Sprint 5 — Cards-pra-revisão + menu contextual + TTS Google ✅ (atual)
+### Sprint 5 — Cards-pra-revisão + menu contextual + TTS Google ✅
+### Hotfix — Import picker (2026-05-21) ✅ (atual)
+
+Bug crítico em produção: colar texto multi-coluna no modal "Novo deck" ou
+"Adicionar cartas" sempre dava "0 cartas" e o user via "Sem cartas" mesmo
+com texto válido. Reproduzido em prod (`quiz.did.lu`) com Playwright e
+confirmado em code review independente.
+
+**Causa raiz:** `src/ui/importPicker.js` `recompute()` rodava no mount com
+textarea vazio (`colCount=0`), e `backCol = Math.min(1, -1) = -1`. As
+guardas subsequentes não corrigiam (`-1 >= 2` é falso), então qualquer
+texto colado lia `cells[-1] = undefined`, filtrava como vazio. O seletor
+de colunas (>2 cols) APARECIA corretamente, mas a linha "Verso" nunca
+tinha botão destacado (porque `backCol=-1`), aparentando estar quebrado.
+
+**Mudanças:**
+- `importPicker.recompute()`: normalização só roda quando `colCount >= 2`;
+  preserva escolha manual via flag `userTouchedCols`.
+- `importPicker`: badge dá feedback acionável ("verifique o separador" /
+  "linhas inválidas") quando há texto sem cartas geradas.
+- `store.parseImport()`: clampa índices negativos (defesa em profundidade
+  contra chamadas legadas).
+- `store.detectSeparator()`: olha as primeiras 20 linhas (não só a 1ª) e
+  pondera presença + ocorrência — robusto a header atípico e células com
+  pontuação interna.
+- `store.parseImportTable()`: split CSV-aware respeitando aspas duplas
+  (`a,"olá, mundo",extra` agora vira 3 colunas, não 4). Remove BOM, NBSP,
+  zero-width chars do input. CRLF já era tratado.
+- `home.js` / `deck.js`: ao mostrar "Sem cartas", preserva texto digitado
+  ao reabrir o modal (não perde mais o que o user já colou).
+- `home.js`: mapping de códigos de erro do backend (`rate_limit_decks_per_day`,
+  `too_many_cards`, `no_user`, etc.) pra mensagens pt-BR.
+
+**Validação em prod (quiz.did.lu, pós-deploy):**
+- 2 cols com tab (Quizlet-like): 5 cartas detectadas ✓
+- 3 cols com vírgula: badge "4 cartas", seletor visível, Col 1+Col 2
+  destacados por default ✓
+- Troca manual Col 3 no Verso: atualiza pra `palavra→exemplo`, etc. ✓
+- Deck criado com sucesso via POST /api/decks ✓
+- Sem erros no console.
 
 Três blocos entregues em uma sprint só, todos batendo em pontos críticos do produto.
 
