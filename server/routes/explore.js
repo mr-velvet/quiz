@@ -3,14 +3,12 @@
 //   sort:  'popular' | 'recent'   (default: 'popular')
 //   q:     string (ILIKE em name)
 //   page:  1-based (default 1)
-//   lang:  hint (não implementado no MVP — ver nota)
 //
 // Page size: 20.
 //
-// Filtro lang: pulamos no MVP. Pra fazer direito teríamos que rodar detecção
-// no momento do POST e armazenar (coluna `lang` no deck). Heurística no SELECT
-// custa caro e é ruim. Dev decidiu cortar — adicionar depois quando tiver
-// detecção persistida.
+// Filtro por idioma ainda não exposto aqui (decks têm lang_front/lang_back
+// persistidos desde a sprint de áudio — basta acrescentar WHERE quando virar
+// necessidade de produto).
 
 const { Router } = require('express');
 const { query, isAvailable } = require('../db');
