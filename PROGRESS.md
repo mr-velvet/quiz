@@ -1,6 +1,6 @@
 # Flashy (quiz) — Progresso
 
-Última atualização: 2026-05-21 (ajustes pós-gamificação: áudio + import + write)
+Última atualização: 2026-05-21 (correção ao final de write/multiple-choice)
 
 > **Antes de qualquer trabalho neste repo, ler `CONCEPTS.md`** — visão de produto,
 > princípios e decisões estratégicas. Este arquivo aqui é o estado operacional.
@@ -34,7 +34,20 @@
 ### Sprint 2 — TTS (OpenAI tts-1, cache GCS)
 ### Sprint 3 — Ownership/Visibility/Pastas/Explore
 ### Sprint 4 — Gamificação ✅
-### Sprint 4.5 — Ajustes pós-gamificação ✅ (atual)
+### Sprint 4.5 — Ajustes pós-gamificação ✅
+### Sprint 4.6 — Correção ao final ✅ (atual)
+
+Modal de fim de sessão (`src/ui/sessionEndModal.js`) agora aceita prop `errors`
+e renderiza lista de cartas erradas:
+- frente em destaque (Fraunces);
+- gabarito (`card.back` inteiro — mostra todos os sinônimos aceitos) com tag
+  verde "Certo";
+- resposta dada (texto digitado ou opção marcada) riscada em vermelho com tag
+  "Você"/"Marcou". Quando o user usa "Não sei" em write, só o gabarito aparece.
+
+Modos `write.js` e `multiple-choice.js` coletam `{ front, correct, given }` em
+cada erro e passam pro modal. Lista com scroll vertical max 260px pra sessões
+longas.
 
 Três pequenos blocos com impacto direto na percepção do produto:
 
