@@ -42,6 +42,7 @@ export async function renderMatch(root, deckId) {
   let timerId = null;
   let mistakes = 0;
   let finished = false;
+  const errorPairIds = new Set();
 
   root.appendChild(topbar({ showBack: true, title: `${deck.name} · Match` }));
 
@@ -85,11 +86,15 @@ export async function renderMatch(root, deckId) {
     });
     stage.innerHTML = '';
     stage.appendChild(el('div', { class: 'panel center muted' }, ['Sessão concluída.']));
+    const errors = [...errorPairIds]
+      .map(id => cardById.get(id))
+      .filter(Boolean)
+      .map(c => ({ front: c.front, correct: c.back, given: '' }));
     openSessionEndModal({
       summary: { ...result.summary, durationMs: Math.round(finalTime) },
       finishResponse: result.finishResponse,
       onReplay: () => replay(), onBack: () => go(`/deck/${deckId}`),
-      deckId, mode: 'match'
+      deckId, mode: 'match', errors
     });
   }
 
@@ -128,6 +133,8 @@ export async function renderMatch(root, deckId) {
       mistakes++;
       // erro: registra no card do tile que estava antes
       if (session) session.onWrong(selected.pairId);
+      errorPairIds.add(selected.pairId);
+      errorPairIds.add(tile.pairId);
       node.classList.add('flash-wrong');
       prevNode?.classList.add('flash-wrong');
       const sel = selected;

@@ -31,6 +31,7 @@ export async function renderSpeed(root, deckId) {
   let correctIdx = -1;
   let locked = false;
   let finished = false;
+  const errors = [];
 
   root.appendChild(topbar({ showBack: true, title: `${deck.name} · Speed round` }));
   const stage = el('div', { class: 'stack stack-4' });
@@ -62,6 +63,7 @@ export async function renderSpeed(root, deckId) {
     } else {
       wrong++;
       if (session) session.onWrong(current.id);
+      errors.push({ front: current.front, correct: current.back, given: opts[idx] || '' });
     }
     renderPlay(idx);
     setTimeout(() => { if (!finished) nextRound(); }, 500);
@@ -109,7 +111,7 @@ export async function renderSpeed(root, deckId) {
       summary: { ...result.summary, durationMs: ROUND_MS },
       finishResponse: result.finishResponse,
       onReplay: () => replay(), onBack: () => go(`/deck/${deckId}`),
-      deckId, mode: 'speed'
+      deckId, mode: 'speed', errors
     });
   }
 

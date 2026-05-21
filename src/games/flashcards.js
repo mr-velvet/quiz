@@ -18,6 +18,7 @@ export async function renderFlashcards(root, deckId) {
   let flipped = false;
   let known = 0, unknown = 0;
   const totalDeckCards = deck.cards.length;
+  const errors = [];
 
   let session = null;
   try { session = await startSession(deckId, 'flashcards'); }
@@ -66,6 +67,7 @@ export async function renderFlashcards(root, deckId) {
     } else {
       unknown++;
       if (session) session.onWrong(card.id);
+      errors.push({ front: card.front, correct: card.back, given: '' });
     }
     i++;
     flipped = false;
@@ -128,7 +130,8 @@ export async function renderFlashcards(root, deckId) {
       onReplay: () => replay(),
       onBack: () => go(`/deck/${deckId}`),
       deckId,
-      mode: 'flashcards'
+      mode: 'flashcards',
+      errors
     });
   }
 
