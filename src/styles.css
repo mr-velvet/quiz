@@ -364,7 +364,14 @@ a:hover { text-decoration: underline; }
   width: min(94vw, 560px);
   padding: 28px 24px;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
+.session-end-modal::-webkit-scrollbar { width: 6px; }
+.session-end-modal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
 .session-end-clean { border-color: rgba(110, 231, 168, 0.45); box-shadow: 0 12px 40px rgba(110, 231, 168, 0.18); }
 .session-end-header { margin-bottom: 18px; }
 .session-end-emoji { font-size: 40px; margin-bottom: 4px; }
@@ -477,12 +484,7 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 260px;
-  overflow-y: auto;
-  padding-right: 4px;
 }
-.session-end-errors-list::-webkit-scrollbar { width: 6px; }
-.session-end-errors-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
 .session-end-error {
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -2066,6 +2068,89 @@ a:hover { text-decoration: underline; }
   z-index: 2;
 }
 .session-end-error-front { padding-right: 36px; }
+
+/* ===== Session end modal — mobile (bottom sheet, foco na revisão) ===== */
+
+@media (max-width: 600px) {
+  /* Ancora o modal ao fundo como bottom sheet ocupando a tela. O scroll é
+     do modal inteiro — acaba o scroll-dentro-de-scroll. */
+  .session-end-backdrop {
+    place-items: end stretch;
+  }
+  .session-end-modal {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 20px 20px 0 0;
+    padding: 0;
+    animation: sheetUp 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* Header vira barra sticky compacta no topo, sempre visível ao rolar. */
+  .session-end-header {
+    order: 1;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: 0;
+    padding: 14px 18px 10px;
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border-soft);
+    box-shadow: 0 6px 16px -12px rgba(0, 0, 0, 0.6);
+  }
+  .session-end-header::before {
+    content: '';
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 100px;
+    background: var(--border);
+    margin: 0 auto 10px;
+  }
+  .session-end-emoji { font-size: 26px; margin-bottom: 0; }
+  .session-end-header h2 { font-size: 19px; }
+
+  /* A revisão dos erros é o conteúdo principal: logo abaixo do header. */
+  .session-end-errors {
+    order: 2;
+    margin: 12px 14px 6px;
+  }
+  .session-end-errors-title { font-size: 14px; }
+  .session-end-error { padding: 12px 14px; }
+  .session-end-error-front { font-size: 16px; }
+  .session-end-error-row { font-size: 14px; }
+
+  /* Enfeites (XP, stats, level-up, streak, medalhas) descem e ficam
+     compactos — informação, não protagonismo. */
+  .session-end-xp-wrap { order: 3; margin: 8px 14px; }
+  .session-end-xp { font-size: 44px; }
+  .session-end-stats { order: 4; margin: 0 14px 12px; }
+  .session-end-levelup { order: 5; margin: 0 14px 10px; }
+  .session-end-streak { order: 6; align-self: center; margin: 0 14px 12px; }
+  .session-end-medals { order: 7; margin: 0 14px 12px; }
+
+  /* Ações fixas no rodapé, sempre alcançáveis sem rolar até o fim. */
+  .session-end-actions {
+    order: 8;
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: var(--bg-elev);
+    border-top: 1px solid var(--border-soft);
+    box-shadow: 0 -6px 16px -12px rgba(0, 0, 0, 0.6);
+  }
+  .session-end-actions .btn { max-width: none; padding: 12px; }
+}
+
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-end-modal { animation: none; }
+}
 
 /* ===== Acessibilidade: prefers-reduced-motion ===== */
 
