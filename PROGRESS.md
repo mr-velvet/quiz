@@ -1,6 +1,6 @@
 # Flashy (quiz) — Progresso
 
-Última atualização: 2026-05-21 (hotfix importação — backCol=-1 zerava cards silenciosamente)
+Última atualização: 2026-05-26 (UX fim de sessão no mobile — bottom sheet + foco na revisão)
 
 > **Antes de qualquer trabalho neste repo, ler `CONCEPTS.md`** — visão de produto,
 > princípios e decisões estratégicas. Este arquivo aqui é o estado operacional.
@@ -39,7 +39,31 @@
 ### Sprint 4.5 — Ajustes pós-gamificação ✅
 ### Sprint 4.6 — Correção ao final ✅
 ### Sprint 5 — Cards-pra-revisão + menu contextual + TTS Google ✅
-### Hotfix — Import picker (2026-05-21) ✅ (atual)
+### Hotfix — Import picker (2026-05-21) ✅
+### UX — Fim de sessão no mobile (2026-05-26) ✅ (atual)
+
+Reportado pelo user: no celular, ao terminar um teste, a área que mostra os
+acertos/erros era pequena e difícil de rolar. Reproduzido com Playwright
+(390×844, 8 erros): o modal estourava a viewport sem scroll próprio, a lista
+de erros (única parte acionável) ficava enterrada sob XP/stats/level-up e
+ainda confinada a uma caixinha de scroll de 260px (scroll-dentro-de-scroll).
+
+**Mudanças** (`src/styles.css`, só CSS — componente JS intacto):
+- `.session-end-modal` vira flex column scrollável (`max-height: calc(100dvh
+  - 32px)`, `overflow-y:auto`, `overscroll-behavior:contain`). Elimina o
+  scroll-dentro-de-scroll também no desktop.
+- `.session-end-errors-list` perde `max-height/overflow` próprios — o modal é
+  a única superfície de rolagem.
+- Media query `<=600px`: bottom sheet ancorado ao fundo (`place-items:end
+  stretch`, `border-radius` só no topo, handle, animação `sheetUp`). Header
+  sticky no topo, `.session-end-actions` sticky no rodapé (respeita
+  `env(safe-area-inset-bottom)`). Reordena via `order`: erros viram
+  protagonistas (order 2, logo abaixo do header); XP/stats/level-up/streak/
+  medalhas descem compactos. `prefers-reduced-motion` desliga a animação.
+- Desktop inalterado na ordem visual (XP grande continua protagonista).
+
+Validado em prod (quiz.did.lu pós-deploy): CSS bundleado contém sheetUp +
+sticky + 100dvh; health 200.
 
 Bug crítico em produção: colar texto multi-coluna no modal "Novo deck" ou
 "Adicionar cartas" sempre dava "0 cartas" e o user via "Sem cartas" mesmo
